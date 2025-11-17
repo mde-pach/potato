@@ -11,6 +11,7 @@ from typing import (
     Any,
     ClassVar,
     Self,
+    TypeVarTuple,
     dataclass_transform,
     get_args,
     get_origin,
@@ -26,7 +27,6 @@ from pydantic._internal._model_construction import (
 )
 
 from .aggregates import Aggregate
-from .aggregates import D as AggregateD
 
 
 class FieldProxy:
@@ -107,6 +107,114 @@ class AliasedDomainProxy:
 
     def __repr__(self):
         return f"AliasedDomainProxy({self.domain_cls.__name__}({self.alias!r}))"
+
+
+class AnnotatedTypeProxy:
+    """
+    Runtime proxy for Annotated type aliases to enable attribute access.
+
+    When you have: Buyer = Annotated[User, "buyer"]
+    This proxy allows: Buyer.id to work at runtime.
+
+    Usage:
+        >>> Buyer = Annotated[User, "buyer"]
+        >>> buyer_id = get_aliased_proxy(Buyer).id
+        >>> # buyer_id is FieldProxy(User, "id", alias="buyer")
+    """
+
+    def __init__(self, annotated_type: Any):
+        """Initialize from an Annotated type alias."""
+        origin = get_origin(annotated_type)
+        if origin is not Annotated:
+            raise TypeError(f"Expected Annotated type, got {type(annotated_type)}")
+
+        args = get_args(annotated_type)
+        self.domain_cls = args[0]
+        self.alias = None
+
+        # Extract alias string from metadata
+        for meta in args[1:]:
+            if isinstance(meta, str):
+                self.alias = meta
+                break
+
+        if self.alias is None:
+            raise ValueError(
+                f"No string alias found in Annotated type: {annotated_type}"
+            )
+
+    def __getattr__(self, field_name: str) -> FieldProxy:
+        """Return a FieldProxy with the alias attached."""
+        # Check if field exists in the domain class
+        annotations = getattr(self.domain_cls, "__annotations__", {})
+        if field_name not in annotations:
+            raise AttributeError(
+                f"Domain '{self.domain_cls.__name__}' has no field '{field_name}'"
+            )
+        return FieldProxy(self.domain_cls, field_name, alias=self.alias)
+
+    def __repr__(self):
+        return f"AnnotatedTypeProxy({self.domain_cls.__name__}, alias={self.alias!r})"
+
+
+def get_aliased_proxy(annotated_type: Any) -> AnnotatedTypeProxy:
+    """
+    Get a proxy object for an Annotated type alias that enables attribute access.
+
+    Usage:
+        >>> Buyer = Annotated[User, "buyer"]
+        >>> BuyerProxy = get_aliased_proxy(Buyer)
+        >>> buyer_id = BuyerProxy.id  # Returns FieldProxy(User, "id", alias="buyer")
+    """
+    return AnnotatedTypeProxy(annotated_type)
+
+
+class AliasedType:
+    """
+    Helper class to create type aliases that support attribute access.
+
+    This allows you to use: Buyer.id where Buyer = AliasedType(User, "buyer")
+    And also use Buyer in type annotations: Aggregate[Buyer, Seller, Product]
+
+    Usage:
+        >>> Buyer = AliasedType(User, "buyer")
+        >>> buyer_id = Buyer.id  # Returns FieldProxy(User, "id", alias="buyer")
+        >>> # Buyer can be used in Aggregate[Buyer, ...] - it will be treated as Annotated[User, "buyer"]
+    """
+
+    def __init__(self, domain_cls: type, alias: str):
+        self._domain_cls = domain_cls
+        self._alias = alias
+        # Create the Annotated type for use in type annotations
+        self._annotated_type = Annotated[domain_cls, alias]  # type: ignore
+
+    def __getattr__(self, field_name: str) -> FieldProxy:
+        """Return a FieldProxy with the alias attached."""
+        annotations = getattr(self._domain_cls, "__annotations__", {})
+        if field_name not in annotations:
+            raise AttributeError(
+                f"Domain '{self._domain_cls.__name__}' has no field '{field_name}'"
+            )
+        return FieldProxy(self._domain_cls, field_name, alias=self._alias)
+
+    def __repr__(self):
+        return f"AliasedType({self._domain_cls.__name__}, alias={self._alias!r})"
+
+    # Make instances work with get_origin/get_args for type checking
+    def __class_getitem__(cls, item):
+        # This allows AliasedType[User, "buyer"] syntax if needed
+        return Annotated[item[0], item[1]]  # type: ignore
+
+    # Make the instance itself work as a type annotation
+    # When used in Aggregate[AliasedType(...), ...], extract the underlying Annotated type
+    @property
+    def __origin__(self):
+        """Make it work with get_origin() for type checking."""
+        return Annotated
+
+    def __args__(self):
+        """Make it work with get_args() for type checking."""
+        return (self._domain_cls, self._alias)
 
 
 @dataclass_transform(
@@ -204,16 +312,6 @@ class DomainMeta(ModelMetaclass):
         # Store field mappings on the class for use by build method
         cls.__aggregate_field_mappings__ = field_mappings  # type: ignore
 
-    @classmethod
-    def alias(cls, alias_name: str) -> AliasedDomainProxy:
-        """
-        Create an aliased reference to this Domain class.
-
-        Use this to distinguish between multiple instances of the same domain type
-        in aggregates or ViewDTOs.
-        """
-        return AliasedDomainProxy(cls, alias_name)
-
     if not TYPE_CHECKING:
 
         def __call__(cls, *args: Any, **kwargs: Any) -> AliasedDomainProxy | Self:
@@ -237,7 +335,7 @@ class DomainMeta(ModelMetaclass):
             """
             # If called with a single string argument, return aliased proxy
             if len(args) == 1 and isinstance(args[0], str) and not kwargs:
-                return cls.alias(args[0])
+                return AliasedDomainProxy(cls, args[0])
 
             # Otherwise, normal instantiation
             return super(DomainMeta, cls).__call__(*args, **kwargs)
@@ -288,6 +386,8 @@ class DomainMeta(ModelMetaclass):
             return super().__getattr__(name)
 
 
+AggregateD = TypeVarTuple("AggregateD")
+
 A = Aggregate[*AggregateD]
 
 
@@ -298,7 +398,8 @@ class Domain[T: A | None = None](BaseModel, metaclass=DomainMeta):
     Domain extends Pydantic's BaseModel with additional features:
     1. Field access as class attributes (e.g., User.username)
     2. Aggregate support via Domain[Aggregate[Type1, Type2, ...]]
-    3. Compile-time validation of field mappings and aggregate declarations
+    3. Aliasing via User.alias("buyer") for multiple instances
+    4. Compile-time validation of field mappings and aggregate declarations
 
     Basic Usage:
         >>> class User(Domain):
@@ -311,6 +412,13 @@ class Domain[T: A | None = None](BaseModel, metaclass=DomainMeta):
         ...     user: User
         ...     price: Annotated[int, Price.amount]
 
+    Aliasing Usage:
+        >>> Buyer = User.alias("buyer")
+        >>> Seller = User.alias("seller")
+        >>> class OrderView(ViewDTO[Aggregate[Buyer, Seller, Product]]):
+        ...     buyer_id: Annotated[int, Buyer.id]
+        ...     seller_id: Annotated[int, Seller.id]
+
     Attributes:
         __aggregate_domain_types__: Tuple of Domain types in the aggregate
         __aggregate_field_mappings__: Mapping of fields to (domain_class, field_name, alias)
@@ -318,3 +426,7 @@ class Domain[T: A | None = None](BaseModel, metaclass=DomainMeta):
 
     __aggregate_domain_types__: ClassVar[tuple[type, ...]] = ()
     __aggregate_field_mappings__: ClassVar[dict[str, tuple[type, str, str | None]]] = {}
+
+    @classmethod
+    def alias(cls: type[Self], alias_name: str) -> Any:
+        pass

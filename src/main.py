@@ -11,7 +11,7 @@ This module demonstrates the key features of the Potato framework:
 
 from __future__ import annotations
 
-from typing import Annotated, Optional
+from typing import Annotated, Optional, TypeAlias
 
 from domain import Domain
 from domain.aggregates import Aggregate
@@ -189,25 +189,30 @@ def example_aggregate():
 # Example 7: ViewDTO with Multiple Domain Instances (Aliasing)
 # =============================================================================
 
+Buyer = User.alias("buyer")
+Seller = User.alias("seller")
 
-class OrderView(ViewDTO[Aggregate[User, User, Product]]):
+
+class OrderView(ViewDTO[Aggregate[Buyer, Seller, Product]]):
     """
     A ViewDTO that combines multiple instances of the same domain type.
 
     This demonstrates the aliasing feature:
-    - User("buyer") and User("seller") distinguish between two User instances
-    - Field mappings explicitly specify which instance to use
-    - The build() method accepts named arguments matching the aliases
+    - Buyer = User.alias("buyer") defines the alias - clean and discoverable!
+    - Use Buyer in Aggregate[Buyer, Seller, Product]
+    - Use Buyer.id syntax for field access - clean and integrated!
+    - The build() method signature is: build(buyer: User, seller: User, product: Product)
+    - Aliases are validated at class definition time to prevent typos
     """
 
-    # Buyer fields (aliased as "buyer")
-    buyer_id: Annotated[int, User("buyer").id]
-    buyer_username: Annotated[str, User("buyer").username]
-    buyer_email: Annotated[str, User("buyer").email]
+    # Use Buyer.field syntax - clean and integrated!
+    buyer_id: Annotated[int, Buyer.id]
+    buyer_username: Annotated[str, Buyer.username]
+    buyer_email: Annotated[str, Buyer.email]
 
-    # Seller fields (aliased as "seller")
-    seller_id: Annotated[int, User("seller").id]
-    seller_username: Annotated[str, User("seller").username]
+    # Seller fields
+    seller_id: Annotated[int, Seller.id]
+    seller_username: Annotated[str, Seller.username]
 
     # Product fields (no alias needed - only one Product)
     product_id: Annotated[int, Product.id]
@@ -241,11 +246,14 @@ def example_aliased_view_dto():
 # =============================================================================
 
 
-class Transaction(Domain[Aggregate[User, User, Product]]):
+class Transaction(
+    Domain[Aggregate[Annotated[User, "buyer"], Annotated[User, "seller"], Product]]
+):
     """
     A Domain aggregate with multiple instances of the same domain type.
 
     Demonstrates that aliasing works for Domain aggregates too, not just ViewDTOs.
+    The Aggregate declaration specifies which aliases are used for each domain instance.
     """
 
     # Buyer fields

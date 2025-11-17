@@ -76,7 +76,10 @@ class ViewDTOMeta(DTOMeta):
     ) -> type:
         cls = super().__new__(mcs, name, bases, namespace, **kwargs)
 
-        # Extract aggregate domain types if present
+        # Extract aggregate domain types and their aliases if present
+        domain_aliases: dict[type, list[str | None]] = {}
+        aggregate_domain_types: list[type] = []
+
         for base in cls.__bases__:
             if hasattr(base, "__pydantic_generic_metadata__"):
                 metadata = base.__pydantic_generic_metadata__
@@ -84,11 +87,43 @@ class ViewDTOMeta(DTOMeta):
                     first_arg = metadata["args"][0]
                     aggregate_origin = get_origin(first_arg)
                     if aggregate_origin is not None:
-                        # Get the domain types from Aggregate[User, Profile, ...]
+                        # Get the domain types from Aggregate[User, Profile, ...] or Aggregate[Annotated[User, "alias"], ...]
+                        # or Aggregate[AliasedType(User, "alias"), ...]
                         aggregate_args = get_args(first_arg)
                         if aggregate_args:
-                            cls.__aggregate_domain_types__ = aggregate_args  # type: ignore
+                            for domain_spec in aggregate_args:
+                                # Check if it's an AliasedType instance
+                                from domain import AliasedType
+
+                                if isinstance(domain_spec, AliasedType):
+                                    domain_type = domain_spec._domain_cls
+                                    alias = domain_spec._alias
+                                # Check if it's Annotated[Domain, "alias"]
+                                elif get_origin(domain_spec) is Annotated:
+                                    args = get_args(domain_spec)
+                                    domain_type = args[0]
+                                    alias = None
+                                    # Look for string alias in metadata
+                                    for meta in args[1:]:
+                                        if isinstance(meta, str):
+                                            alias = meta
+                                            break
+                                else:
+                                    # Plain domain, no alias
+                                    domain_type = domain_spec
+                                    alias = None
+
+                                aggregate_domain_types.append(domain_type)
+
+                                # Track aliases for each domain type
+                                if domain_type not in domain_aliases:
+                                    domain_aliases[domain_type] = []
+                                domain_aliases[domain_type].append(alias)
                             break
+
+        if aggregate_domain_types:
+            cls.__aggregate_domain_types__ = tuple(aggregate_domain_types)  # type: ignore
+            cls.__domain_aliases__ = domain_aliases  # type: ignore
 
         # Extract field mappings: view_field -> (domain_class, domain_field, alias)
         field_mappings: dict[str, tuple[type, str, str | None]] = {}
@@ -113,6 +148,16 @@ class ViewDTOMeta(DTOMeta):
                                 metadata.alias,
                             )
                             break
+                        # Handle AliasedType instances like Buyer.id where Buyer = AliasedType(User, "buyer")
+                        from domain import AliasedType
+
+                        if isinstance(metadata, AliasedType):
+                            # Extract field name from the type annotation
+                            # The field name should be inferred from the context or extracted differently
+                            # For now, we'll need to handle this case separately
+                            # This is a limitation - we need the field name which isn't directly available
+                            # The user should use Buyer.id which creates a FieldProxy
+                            pass
         except Exception:
             # If we can't get type hints, just skip
             pass
@@ -120,7 +165,57 @@ class ViewDTOMeta(DTOMeta):
         if field_mappings:
             cls.__field_mappings__ = field_mappings  # type: ignore
 
+        # Validate that field references use declared aliases
+        if hasattr(cls, "__domain_aliases__") and field_mappings:
+            ViewDTOMeta._validate_aliases(cls, domain_aliases, field_mappings)
+
         return cls
+
+    @staticmethod
+    def _validate_aliases(
+        cls: type,
+        domain_aliases: dict[type, list[str | None]],
+        field_mappings: dict[str, tuple[type, str, str | None]],
+    ) -> None:
+        """
+        Validate that field references use aliases declared in Aggregate.
+
+        Raises ValueError if a field uses an alias not declared in the Aggregate.
+        """
+        for view_field, (
+            domain_cls,
+            domain_field,
+            field_alias,
+        ) in field_mappings.items():
+            if domain_cls not in domain_aliases:
+                # Domain not in aggregate, skip validation
+                continue
+
+            declared_aliases = domain_aliases[domain_cls]
+
+            # If there's only one instance of this domain type, alias should be None
+            if len(declared_aliases) == 1 and declared_aliases[0] is None:
+                if field_alias is not None:
+                    raise ValueError(
+                        f"ViewDTO '{cls.__name__}' field '{view_field}' uses alias '{field_alias}' "
+                        f"but Domain '{domain_cls.__name__}' has no alias declared in Aggregate. "
+                        f"Remove the alias from the field reference."
+                    )
+            # If there are multiple instances, alias must be declared
+            elif len(declared_aliases) > 1:
+                if field_alias is None:
+                    raise ValueError(
+                        f"ViewDTO '{cls.__name__}' field '{view_field}' references Domain '{domain_cls.__name__}' "
+                        f"without an alias, but multiple instances are declared in Aggregate. "
+                        f'Use Annotated[type, {domain_cls.__name__}("alias").{domain_field}] '
+                        f"with one of the declared aliases: {[a for a in declared_aliases if a is not None]}"
+                    )
+                elif field_alias not in declared_aliases:
+                    raise ValueError(
+                        f"ViewDTO '{cls.__name__}' field '{view_field}' uses alias '{field_alias}' "
+                        f"which is not declared in Aggregate for Domain '{domain_cls.__name__}'. "
+                        f"Declared aliases: {[a for a in declared_aliases if a is not None]}"
+                    )
 
 
 class ViewDTO[D](BaseModel, metaclass=ViewDTOMeta):
@@ -162,22 +257,28 @@ class ViewDTO[D](BaseModel, metaclass=ViewDTOMeta):
         >>> view = UserProfileView.build(user, profile)
 
     Usage - Multiple instances of same domain (aliasing):
-        >>> class OrderView(ViewDTO[Aggregate[User, User, Product]]):
+        >>> class OrderView(ViewDTO[Aggregate[
+        ...     Annotated[User, "buyer"],
+        ...     Annotated[User, "seller"],
+        ...     Product
+        ... ]]):
         ...     buyer_id: Annotated[int, User("buyer").id]
         ...     buyer_name: Annotated[str, User("buyer").username]
         ...     seller_id: Annotated[int, User("seller").id]
         ...     seller_name: Annotated[str, User("seller").username]
-        ...     product: Annotated[str, Product.name]
+        ...     product_name: Annotated[str, Product.name]
         >>>
         >>> view = OrderView.build(buyer=buyer, seller=seller, product=product)
 
     Attributes:
         __field_mappings__: Dict mapping DTO fields to (domain_class, field_name, alias)
         __aggregate_domain_types__: Tuple of Domain types when using Aggregate
+        __domain_aliases__: Dict mapping domain types to list of aliases (None for unaliased)
     """
 
     __field_mappings__: ClassVar[dict[str, tuple[type, str, str | None]]] = {}
     __aggregate_domain_types__: ClassVar[tuple[type, ...]] = ()
+    __domain_aliases__: ClassVar[dict[type, list[str | None]]] = {}
 
     model_config = ConfigDict(
         extra="allow",
@@ -224,15 +325,72 @@ class ViewDTO[D](BaseModel, metaclass=ViewDTOMeta):
             # Multiple domains - build entity map: (domain_class, alias) -> domain_instance
             entity_map: dict[tuple[type, str | None], Any] = {}
 
-            # Handle positional arguments (no alias)
-            for entity in entities:
+            # Get domain aliases if available
+            domain_aliases = getattr(cls, "__domain_aliases__", {})
+
+            # Build expected parameter names based on aliases
+            expected_params: dict[str, tuple[type, str | None]] = {}
+            if domain_aliases:
+                # Use declared aliases to determine parameter names
+                for domain_type in cls.__aggregate_domain_types__:
+                    aliases = domain_aliases.get(domain_type, [None])
+                    for alias in aliases:
+                        if alias is not None:
+                            param_name = alias
+                        else:
+                            # No alias: use class name in lowercase
+                            param_name = domain_type.__name__.lower()
+                        expected_params[param_name] = (domain_type, alias)
+            else:
+                # Fallback: use class names in lowercase for positional args
+                for i, domain_type in enumerate(cls.__aggregate_domain_types__):
+                    param_name = domain_type.__name__.lower()
+                    expected_params[param_name] = (domain_type, None)
+
+            # Handle positional arguments (no alias) - map to expected params
+            entity_list = list(entities)
+            for i, entity in enumerate(entity_list):
                 entity_type = type(entity)
-                entity_map[(entity_type, None)] = entity
+                # Try to match with expected params
+                matched = False
+                for param_name, (
+                    expected_type,
+                    expected_alias,
+                ) in expected_params.items():
+                    if expected_type == entity_type and expected_alias is None:
+                        # Check if this param hasn't been used yet
+                        if (expected_type, expected_alias) not in entity_map:
+                            entity_map[(expected_type, expected_alias)] = entity
+                            matched = True
+                            break
+                if not matched:
+                    # Fallback: use None alias
+                    entity_map[(entity_type, None)] = entity
 
             # Handle named arguments (with alias)
             for alias_name, entity in named_entities.items():
                 entity_type = type(entity)
-                entity_map[(entity_type, alias_name)] = entity
+                # Validate that the alias matches expected params
+                if alias_name in expected_params:
+                    expected_type, expected_alias = expected_params[alias_name]
+                    if expected_type != entity_type:
+                        raise ValueError(
+                            f"{cls.__name__}.build() parameter '{alias_name}' expects "
+                            f"Domain type '{expected_type.__name__}', got '{entity_type.__name__}'"
+                        )
+                    entity_map[(entity_type, expected_alias)] = entity
+                else:
+                    # Unknown parameter name - try to infer from type
+                    # Check if there's a matching domain type with this alias
+                    found = False
+                    for domain_type, aliases in domain_aliases.items():
+                        if alias_name in aliases and domain_type == entity_type:
+                            entity_map[(entity_type, alias_name)] = entity
+                            found = True
+                            break
+                    if not found:
+                        # Fallback: use the alias name directly
+                        entity_map[(entity_type, alias_name)] = entity
 
             # Extract data using field mappings
             mapped_data = {}
