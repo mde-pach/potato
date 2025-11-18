@@ -141,16 +141,6 @@ class ViewDTOMeta(DTOMeta):
                                 metadata.alias,
                             )
                             break
-                        # Handle AliasedType instances like Buyer.id where Buyer = AliasedType(User, "buyer")
-                        from potato.domain.domain import AliasedType
-
-                        if isinstance(metadata, AliasedType):
-                            # Extract field name from the type annotation
-                            # The field name should be inferred from the context or extracted differently
-                            # For now, we'll need to handle this case separately
-                            # This is a limitation - we need the field name which isn't directly available
-                            # The user should use Buyer.id which creates a FieldProxy
-                            pass
         except Exception:
             # If we can't get type hints, just skip
             pass
@@ -283,6 +273,125 @@ class ViewDTO[D](BaseModel, metaclass=ViewDTOMeta):
     )
 
     @classmethod
+    def _build_entity_map(
+        cls: type[Self],
+        entities: tuple[Any, ...],
+        named_entities: dict[str, Any],
+        domain_aliases: dict[type, list[str | None]],
+    ) -> dict[tuple[type, str | None], Any]:
+        """
+        Build a map of (domain_class, alias) -> domain_instance.
+
+        Args:
+            entities: Positional domain instances
+            named_entities: Named domain instances
+            domain_aliases: Mapping of domain types to their aliases
+
+        Returns:
+            Dictionary mapping (domain_type, alias) to entity instances
+
+        Raises:
+            ValueError: If parameter names don't match expected values
+        """
+        entity_map: dict[tuple[type, str | None], Any] = {}
+
+        # Build expected parameter names based on aliases
+        expected_params: dict[str, tuple[type, str | None]] = {}
+        if domain_aliases:
+            for domain_type in cls.__aggregate_domain_types__:
+                aliases = domain_aliases.get(domain_type, [None])
+                for alias in aliases:
+                    param_name = alias if alias else domain_type.__name__.lower()
+                    expected_params[param_name] = (domain_type, alias)
+        else:
+            for domain_type in cls.__aggregate_domain_types__:
+                param_name = domain_type.__name__.lower()
+                expected_params[param_name] = (domain_type, None)
+
+        # Handle positional arguments
+        for entity in entities:
+            entity_type = type(entity)
+            entity_map[(entity_type, None)] = entity
+
+        # Handle named arguments
+        for alias_name, entity in named_entities.items():
+            entity_type = type(entity)
+            if alias_name in expected_params:
+                expected_type, expected_alias = expected_params[alias_name]
+                if expected_type != entity_type:
+                    raise ValueError(
+                        f"{cls.__name__}.build() parameter '{alias_name}' expects "
+                        f"Domain type '{expected_type.__name__}', got '{entity_type.__name__}'"
+                    )
+                entity_map[(entity_type, expected_alias)] = entity
+            else:
+                raise ValueError(
+                    f"{cls.__name__}.build() got unexpected parameter '{alias_name}'. "
+                    f"Expected parameters: {list(expected_params.keys())}"
+                )
+
+        # Validate all expected parameters are provided
+        for param_name, (expected_type, expected_alias) in expected_params.items():
+            key = (expected_type, expected_alias)
+            if key not in entity_map:
+                raise ValueError(
+                    f"{cls.__name__}.build() missing required parameter '{param_name}' "
+                    f"of type '{expected_type.__name__}'"
+                )
+
+        return entity_map
+
+    @classmethod
+    def _extract_mapped_data(
+        cls: type[Self],
+        entity_map: dict[tuple[type, str | None], Any],
+        named_entities: dict[str, Any],
+    ) -> dict[str, Any]:
+        """
+        Extract data from entities using field mappings.
+
+        Args:
+            entity_map: Map of (domain_type, alias) to entity instances
+            named_entities: Named entities for unmapped field fallback
+
+        Returns:
+            Dictionary of field values for DTO construction
+        """
+        mapped_data = {}
+
+        if hasattr(cls, "__field_mappings__") and cls.__field_mappings__:
+            for view_field, (
+                domain_cls,
+                domain_field,
+                field_alias,
+            ) in cls.__field_mappings__.items():
+                key = (domain_cls, field_alias)
+                if key in entity_map:
+                    entity = entity_map[key]
+                    entity_data = entity.model_dump()
+                    if domain_field in entity_data:
+                        mapped_data[view_field] = entity_data[domain_field]
+                else:
+                    # Try without alias as fallback
+                    key_no_alias = (domain_cls, None)
+                    if key_no_alias in entity_map:
+                        entity = entity_map[key_no_alias]
+                        entity_data = entity.model_dump()
+                        if domain_field in entity_data:
+                            mapped_data[view_field] = entity_data[domain_field]
+
+        # Add any unmapped fields from entities
+        for field_name in cls.model_fields:
+            if field_name not in mapped_data:
+                for entity in named_entities.values():
+                    entity_data = entity.model_dump()
+                    if field_name in entity_data:
+                        mapped_data[field_name] = entity_data[field_name]
+                        break
+
+        return mapped_data
+
+    @classmethod
     def build(cls: type[Self], *entities: Any, **named_entities: Any) -> Self:
         """
         Build a ViewDTO from one or more Domain instances.
@@ -314,136 +423,14 @@ class ViewDTO[D](BaseModel, metaclass=ViewDTOMeta):
             hasattr(cls, "__aggregate_domain_types__")
             and cls.__aggregate_domain_types__
         ):
-            # Multiple domains - build entity map: (domain_class, alias) -> domain_instance
-            entity_map: dict[tuple[type, str | None], Any] = {}
-
-            # Get domain aliases if available
+            # Multiple domains - build entity map and extract data
             domain_aliases = getattr(cls, "__domain_aliases__", {})
-
-            # Build expected parameter names based on aliases
-            expected_params: dict[str, tuple[type, str | None]] = {}
-            if domain_aliases:
-                # Use declared aliases to determine parameter names
-                for domain_type in cls.__aggregate_domain_types__:
-                    aliases = domain_aliases.get(domain_type, [None])
-                    for alias in aliases:
-                        if alias is not None:
-                            param_name = alias
-                        else:
-                            # No alias: use class name in lowercase
-                            param_name = domain_type.__name__.lower()
-                        expected_params[param_name] = (domain_type, alias)
-            else:
-                # Fallback: use class names in lowercase for positional args
-                for i, domain_type in enumerate(cls.__aggregate_domain_types__):
-                    param_name = domain_type.__name__.lower()
-                    expected_params[param_name] = (domain_type, None)
-
-            # Handle positional arguments (no alias) - map to expected params
-            entity_list = list(entities)
-            for i, entity in enumerate(entity_list):
-                entity_type = type(entity)
-                # Try to match with expected params
-                matched = False
-                for param_name, (
-                    expected_type,
-                    expected_alias,
-                ) in expected_params.items():
-                    if expected_type == entity_type and expected_alias is None:
-                        # Check if this param hasn't been used yet
-                        if (expected_type, expected_alias) not in entity_map:
-                            entity_map[(expected_type, expected_alias)] = entity
-                            matched = True
-                            break
-                if not matched:
-                    # Fallback: use None alias
-                    entity_map[(entity_type, None)] = entity
-
-            # Handle named arguments (with alias)
-            for alias_name, entity in named_entities.items():
-                entity_type = type(entity)
-                # Validate that the alias matches expected params
-                if alias_name in expected_params:
-                    expected_type, expected_alias = expected_params[alias_name]
-                    if expected_type != entity_type:
-                        raise ValueError(
-                            f"{cls.__name__}.build() parameter '{alias_name}' expects "
-                            f"Domain type '{expected_type.__name__}', got '{entity_type.__name__}'"
-                        )
-                    entity_map[(entity_type, expected_alias)] = entity
-                else:
-                    # Unknown parameter name - try to infer from type
-                    # Check if there's a matching domain type with this alias
-                    found = False
-                    for domain_type, aliases in domain_aliases.items():
-                        if alias_name in aliases and domain_type == entity_type:
-                            entity_map[(entity_type, alias_name)] = entity
-                            found = True
-                            break
-                    if not found:
-                        # Raise error for unknown parameter name
-                        raise ValueError(
-                            f"{cls.__name__}.build() got unexpected parameter '{alias_name}'. "
-                            f"Expected parameters: {list(expected_params.keys())}"
-                        )
-
-            # Validate that all expected parameters are provided
-            for param_name, (expected_type, expected_alias) in expected_params.items():
-                key = (expected_type, expected_alias)
-                if key not in entity_map:
-                    raise ValueError(
-                        f"{cls.__name__}.build() missing required parameter '{param_name}' "
-                        f"of type '{expected_type.__name__}'"
-                    )
-
-            # Extract data using field mappings
-            mapped_data = {}
-
-            if hasattr(cls, "__field_mappings__") and cls.__field_mappings__:
-                for view_field, (
-                    domain_cls,
-                    domain_field,
-                    field_alias,
-                ) in cls.__field_mappings__.items():
-                    key = (domain_cls, field_alias)
-                    if key in entity_map:
-                        entity = entity_map[key]
-                        entity_data = entity.model_dump()
-                        if domain_field in entity_data:
-                            mapped_data[view_field] = entity_data[domain_field]
-                    else:
-                        # Try without alias as fallback for non-aliased references
-                        key_no_alias = (domain_cls, None)
-                        if key_no_alias in entity_map:
-                            entity = entity_map[key_no_alias]
-                            entity_data = entity.model_dump()
-                            if domain_field in entity_data:
-                                mapped_data[view_field] = entity_data[domain_field]
-                        else:
-                            # Last resort: find any entity of this domain class
-                            for (entity_cls, _), entity in entity_map.items():
-                                if entity_cls == domain_cls:
-                                    entity_data = entity.model_dump()
-                                    if domain_field in entity_data:
-                                        mapped_data[view_field] = entity_data[
-                                            domain_field
-                                        ]
-                                    break
-
-            # Add any unmapped fields by trying each entity
-            for field_name in cls.model_fields:
-                if field_name not in mapped_data:
-                    # Try all entities
-                    for entity in list(entities) + list(named_entities.values()):
-                        entity_data = entity.model_dump()
-                        if field_name in entity_data:
-                            mapped_data[field_name] = entity_data[field_name]
-                            break
-
+            entity_map = cls._build_entity_map(entities, named_entities, domain_aliases)
+            mapped_data = cls._extract_mapped_data(entity_map, named_entities)
             return cls(**mapped_data)
 
         else:
-            # Single domain - legacy behavior
+            # Single domain
             if len(entities) != 1 or named_entities:
                 raise ValueError(
                     f"{cls.__name__} expects exactly 1 positional domain instance, "
@@ -451,36 +438,25 @@ class ViewDTO[D](BaseModel, metaclass=ViewDTOMeta):
                 )
 
             entity = entities[0]
+            domain_data = entity.model_dump()
 
             # If we have field mappings, remap the data
-            if hasattr(cls, "__field_mappings__") and cls.__field_mappings__:
-                domain_data = entity.model_dump()
-                mapped_data = {}
+            if not (hasattr(cls, "__field_mappings__") and cls.__field_mappings__):
+                return cls(**domain_data)
 
-                # For single domain, field_mappings are (domain_class, field_name, alias)
-                for view_field, mapping in cls.__field_mappings__.items():
-                    if isinstance(mapping, tuple):
-                        # New format: (domain_class, field_name, alias)
-                        if len(mapping) == 3:
-                            _, domain_field, _ = mapping
-                        else:
-                            # Backward compat: (domain_class, field_name)
-                            _, domain_field = mapping
-                    else:
-                        # Old format: just field_name string (should not happen with new metaclass)
-                        domain_field = mapping
+            mapped_data = {}
 
-                    if domain_field in domain_data:
-                        mapped_data[view_field] = domain_data[domain_field]
+            # Extract fields using mappings
+            for view_field, (_, domain_field, _) in cls.__field_mappings__.items():
+                if domain_field in domain_data:
+                    mapped_data[view_field] = domain_data[domain_field]
 
-                # Add any other fields that weren't explicitly mapped
-                for field_name in cls.model_fields:
-                    if field_name not in mapped_data and field_name in domain_data:
-                        mapped_data[field_name] = domain_data[field_name]
+            # Add any unmapped fields
+            for field_name in cls.model_fields:
+                if field_name not in mapped_data and field_name in domain_data:
+                    mapped_data[field_name] = domain_data[field_name]
 
-                return cls(**mapped_data)
-            else:
-                return cls(**entity.model_dump())
+            return cls(**mapped_data)
 
 
 class BuildDTO[D](BaseModel, metaclass=DTOMeta):
