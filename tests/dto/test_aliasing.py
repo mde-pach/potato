@@ -10,7 +10,7 @@ from pydantic import ValidationError
 from potato.domain.aggregates import Aggregate
 from potato.dto import ViewDTO
 
-from .conftest import Buyer, Product, Seller
+from ..fixtures.domains import Buyer, Product, Seller, User
 
 # =============================================================================
 # Aliased ViewDTO Test Classes
@@ -57,7 +57,9 @@ class PartialAliasedView(ViewDTO[Aggregate[Buyer, Seller, Product]]):
 class TestAliasedViewDTOCreation:
     """Test creating ViewDTOs with aliased domains."""
 
-    def test_build_with_named_arguments(self, buyer_user, seller_user, laptop_product):
+    def test_build_with_named_arguments(
+        self, buyer_user: User, seller_user: User, laptop_product: Product
+    ) -> None:
         """Test building ViewDTO with named arguments for aliases."""
         view = OrderView.build(
             buyer=buyer_user, seller=seller_user, product=laptop_product
@@ -71,7 +73,9 @@ class TestAliasedViewDTOCreation:
         assert view.product_id == 100
         assert view.product_name == "Laptop"
 
-    def test_build_simple_aliased_view(self, buyer_user, seller_user):
+    def test_build_simple_aliased_view(
+        self, buyer_user: User, seller_user: User
+    ) -> None:
         """Test building simple ViewDTO with just two aliases."""
         view = SimpleAliasedView.build(buyer=buyer_user, seller=seller_user)
 
@@ -81,8 +85,8 @@ class TestAliasedViewDTOCreation:
         assert view.seller_name == "seller1"
 
     def test_build_partial_aliased_view(
-        self, buyer_user, seller_user, smartphone_product
-    ):
+        self, buyer_user: User, seller_user: User, smartphone_product: Product
+    ) -> None:
         """Test building ViewDTO with partial field selection."""
         view = PartialAliasedView.build(
             buyer=buyer_user, seller=seller_user, product=smartphone_product
@@ -100,8 +104,8 @@ class TestAliasedViewDTOFieldMapping:
     """Test field mapping with aliased domains."""
 
     def test_buyer_fields_mapped_correctly(
-        self, buyer_user, seller_user, simple_product
-    ):
+        self, buyer_user: User, seller_user: User, simple_product: Product
+    ) -> None:
         """Test that buyer fields are mapped correctly."""
         view = OrderView.build(
             buyer=buyer_user, seller=seller_user, product=simple_product
@@ -113,8 +117,8 @@ class TestAliasedViewDTOFieldMapping:
         assert view.buyer_email == buyer_user.email
 
     def test_seller_fields_mapped_correctly(
-        self, buyer_user, seller_user, simple_product
-    ):
+        self, buyer_user: User, seller_user: User, simple_product: Product
+    ) -> None:
         """Test that seller fields are mapped correctly."""
         view = OrderView.build(
             buyer=buyer_user, seller=seller_user, product=simple_product
@@ -125,8 +129,8 @@ class TestAliasedViewDTOFieldMapping:
         assert view.seller_username == seller_user.username
 
     def test_different_users_mapped_to_different_aliases(
-        self, simple_user, complete_user, simple_product
-    ):
+        self, simple_user: User, complete_user: User, simple_product: Product
+    ) -> None:
         """Test that different user instances are correctly distinguished."""
         view = OrderView.build(
             buyer=simple_user, seller=complete_user, product=simple_product
@@ -142,7 +146,9 @@ class TestAliasedViewDTOFieldMapping:
 class TestAliasedViewDTOSerialization:
     """Test serialization of aliased ViewDTOs."""
 
-    def test_model_dump(self, buyer_user, seller_user, laptop_product):
+    def test_model_dump(
+        self, buyer_user: User, seller_user: User, laptop_product: Product
+    ) -> None:
         """Test model_dump with aliased ViewDTO."""
         view = OrderView.build(
             buyer=buyer_user, seller=seller_user, product=laptop_product
@@ -155,7 +161,9 @@ class TestAliasedViewDTOSerialization:
         assert data["seller_username"] == "seller1"
         assert data["product_name"] == "Laptop"
 
-    def test_model_dump_json(self, buyer_user, seller_user, simple_product):
+    def test_model_dump_json(
+        self, buyer_user: User, seller_user: User, simple_product: Product
+    ) -> None:
         """Test JSON serialization."""
         view = OrderView.build(
             buyer=buyer_user, seller=seller_user, product=simple_product
@@ -171,7 +179,9 @@ class TestAliasedViewDTOSerialization:
 class TestAliasedViewDTOImmutability:
     """Test immutability of aliased ViewDTOs."""
 
-    def test_view_is_frozen(self, buyer_user, seller_user, simple_product):
+    def test_view_is_frozen(
+        self, buyer_user: User, seller_user: User, simple_product: Product
+    ) -> None:
         """Test that aliased ViewDTO is frozen."""
         view = OrderView.build(
             buyer=buyer_user, seller=seller_user, product=simple_product
@@ -180,7 +190,9 @@ class TestAliasedViewDTOImmutability:
         with pytest.raises((AttributeError, ValidationError)):
             view.buyer_id = 999
 
-    def test_cannot_modify_any_field(self, buyer_user, seller_user, simple_product):
+    def test_cannot_modify_any_field(
+        self, buyer_user: User, seller_user: User, simple_product: Product
+    ) -> None:
         """Test that no field can be modified."""
         view = OrderView.build(
             buyer=buyer_user, seller=seller_user, product=simple_product
@@ -193,15 +205,17 @@ class TestAliasedViewDTOImmutability:
 class TestAliasedViewDTOErrorHandling:
     """Test error handling with aliased ViewDTOs."""
 
-    def test_missing_required_alias_raises_error(self, buyer_user, simple_product):
+    def test_missing_required_alias_raises_error(
+        self, buyer_user: User, simple_product: Product
+    ) -> None:
         """Test that missing required aliased argument raises error."""
         # Missing seller argument
         with pytest.raises((ValueError, TypeError, KeyError)):
             OrderView.build(buyer=buyer_user, product=simple_product)
 
     def test_wrong_argument_name_raises_error(
-        self, buyer_user, seller_user, simple_product
-    ):
+        self, buyer_user: User, seller_user: User, simple_product: Product
+    ) -> None:
         """Test that wrong argument names are handled."""
         # Using 'customer' instead of 'buyer'
         with pytest.raises((ValueError, TypeError)):
@@ -213,7 +227,9 @@ class TestAliasedViewDTOErrorHandling:
 class TestAliasedViewDTOComplexScenarios:
     """Test complex scenarios with aliased ViewDTOs."""
 
-    def test_same_user_as_buyer_and_seller(self, simple_user, simple_product):
+    def test_same_user_as_buyer_and_seller(
+        self, simple_user: User, simple_product: Product
+    ) -> None:
         """Test using same user instance for both buyer and seller."""
         view = OrderView.build(
             buyer=simple_user, seller=simple_user, product=simple_product
@@ -225,8 +241,8 @@ class TestAliasedViewDTOComplexScenarios:
         assert view.buyer_id == 1
 
     def test_multiple_views_from_same_data(
-        self, buyer_user, seller_user, simple_product
-    ):
+        self, buyer_user: User, seller_user: User, simple_product: Product
+    ) -> None:
         """Test creating multiple views from same data."""
         view1 = OrderView.build(
             buyer=buyer_user, seller=seller_user, product=simple_product
@@ -237,7 +253,9 @@ class TestAliasedViewDTOComplexScenarios:
 
         assert view1 == view2
 
-    def test_swapped_buyer_and_seller(self, buyer_user, seller_user, simple_product):
+    def test_swapped_buyer_and_seller(
+        self, buyer_user: User, seller_user: User, simple_product: Product
+    ) -> None:
         """Test swapping buyer and seller arguments."""
         view1 = OrderView.build(
             buyer=buyer_user, seller=seller_user, product=simple_product
@@ -256,15 +274,21 @@ class TestAliasedViewDTOComplexScenarios:
 class TestAliasDefinitions:
     """Test alias definition and usage."""
 
-    def test_buyer_alias_is_distinct_type(self, buyer_alias, user_class):
+    def test_buyer_alias_is_distinct_type(
+        self, buyer_alias: type[Buyer], user_class: type[User]
+    ) -> None:
         """Test that Buyer alias is treated as distinct type."""
         # Buyer and User are related but distinct for typing purposes
         assert buyer_alias is not user_class
 
-    def test_seller_alias_is_distinct_type(self, seller_alias, user_class):
+    def test_seller_alias_is_distinct_type(
+        self, seller_alias: type[Seller], user_class: type[User]
+    ) -> None:
         """Test that Seller alias is treated as distinct type."""
         assert seller_alias is not user_class
 
-    def test_buyer_and_seller_are_different(self, buyer_alias, seller_alias):
+    def test_buyer_and_seller_are_different(
+        self, buyer_alias: type[Buyer], seller_alias: type[Seller]
+    ) -> None:
         """Test that Buyer and Seller aliases are different."""
         assert buyer_alias is not seller_alias

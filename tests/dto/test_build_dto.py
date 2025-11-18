@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+from typing import Type
+
 import pytest
 from pydantic import ValidationError
 
 from potato.dto import BuildDTO
 
-from .conftest import Product, User
+from ..fixtures.domains import Product, User
 
 # =============================================================================
 # BuildDTO Test Classes
@@ -51,14 +53,14 @@ class MinimalUserBuildDTO(BuildDTO[User]):
 class TestBuildDTOCreation:
     """Test BuildDTO instantiation."""
 
-    def test_create_basic_build_dto(self):
+    def test_create_basic_build_dto(self) -> None:
         """Test creating a basic BuildDTO."""
         dto = UserBuildDTO(username="alice", email="alice@example.com")
 
         assert dto.username == "alice"
         assert dto.email == "alice@example.com"
 
-    def test_create_build_dto_with_optional_fields(self):
+    def test_create_build_dto_with_optional_fields(self) -> None:
         """Test creating BuildDTO with optional fields."""
         dto = UserBuildWithOptionalDTO(
             username="bob", email="bob@example.com", tutor="alice", friends=["charlie"]
@@ -68,14 +70,14 @@ class TestBuildDTOCreation:
         assert dto.tutor == "alice"
         assert dto.friends == ["charlie"]
 
-    def test_create_product_build_dto(self):
+    def test_create_product_build_dto(self) -> None:
         """Test creating a product BuildDTO."""
         dto = ProductBuildDTO(name="Laptop", description="High-performance laptop")
 
         assert dto.name == "Laptop"
         assert dto.description == "High-performance laptop"
 
-    def test_create_minimal_build_dto(self):
+    def test_create_minimal_build_dto(self) -> None:
         """Test creating minimal BuildDTO."""
         dto = MinimalUserBuildDTO(username="test")
 
@@ -85,7 +87,7 @@ class TestBuildDTOCreation:
 class TestBuildDTOValidation:
     """Test BuildDTO validation."""
 
-    def test_missing_required_field_raises_error(self):
+    def test_missing_required_field_raises_error(self) -> None:
         """Test that missing required fields raise ValidationError."""
         with pytest.raises(ValidationError) as exc_info:
             UserBuildDTO(username="test")
@@ -93,7 +95,7 @@ class TestBuildDTOValidation:
         error = exc_info.value
         assert "email" in str(error)
 
-    def test_invalid_type_raises_error(self):
+    def test_invalid_type_raises_error(self) -> None:
         """Test that invalid types raise ValidationError."""
         with pytest.raises(ValidationError):
             UserBuildDTO(username=123, email="test@example.com")
@@ -101,7 +103,7 @@ class TestBuildDTOValidation:
         # Might coerce or raise error depending on pydantic settings
         # Just ensure validation happens
 
-    def test_extra_fields_allowed(self):
+    def test_extra_fields_allowed(self) -> None:
         """Test that extra fields are allowed (or ignored)."""
         # This depends on model config, but by default Pydantic ignores extras
         dto = UserBuildDTO(
@@ -111,14 +113,14 @@ class TestBuildDTOValidation:
         assert dto.username == "test"
         assert dto.email == "test@example.com"
 
-    def test_empty_string_allowed(self):
+    def test_empty_string_allowed(self) -> None:
         """Test that empty strings are allowed."""
         dto = UserBuildDTO(username="", email="")
 
         assert dto.username == ""
         assert dto.email == ""
 
-    def test_list_field_validation(self):
+    def test_list_field_validation(self) -> None:
         """Test that list fields are validated."""
         dto = UserBuildWithOptionalDTO(
             username="test", email="test@example.com", friends=["friend1", "friend2"]
@@ -131,7 +133,7 @@ class TestBuildDTOValidation:
 class TestBuildDTOToDomain:
     """Test converting BuildDTO to Domain."""
 
-    def test_model_dump_for_domain_creation(self, user_class):
+    def test_model_dump_for_domain_creation(self, user_class: Type[User]) -> None:
         """Test using model_dump to create domain."""
         dto = UserBuildDTO(username="alice", email="alice@example.com")
         user = user_class(**dto.model_dump(), id=1)
@@ -140,7 +142,7 @@ class TestBuildDTOToDomain:
         assert user.username == "alice"
         assert user.email == "alice@example.com"
 
-    def test_model_dump_with_optional_fields(self, user_class):
+    def test_model_dump_with_optional_fields(self, user_class: Type[User]) -> None:
         """Test model_dump includes optional fields."""
         dto = UserBuildWithOptionalDTO(
             username="bob",
@@ -155,7 +157,9 @@ class TestBuildDTOToDomain:
         assert user.tutor == "alice"
         assert user.friends == ["charlie", "diana"]
 
-    def test_partial_build_dto_requires_additional_fields(self, user_class):
+    def test_partial_build_dto_requires_additional_fields(
+        self, user_class: Type[User]
+    ) -> None:
         """Test that partial BuildDTO requires additional fields for domain."""
         dto = MinimalUserBuildDTO(username="test")
 
@@ -167,7 +171,7 @@ class TestBuildDTOToDomain:
         user = user_class(**dto.model_dump(), id=1, email="test@example.com")
         assert user.username == "test"
 
-    def test_product_build_to_domain(self, product_class):
+    def test_product_build_to_domain(self, product_class: Type[Product]) -> None:
         """Test converting product BuildDTO to domain."""
         dto = ProductBuildDTO(name="Widget", description="A useful widget")
         product = product_class(**dto.model_dump(), id=1)
@@ -180,7 +184,7 @@ class TestBuildDTOToDomain:
 class TestBuildDTOSerialization:
     """Test BuildDTO serialization."""
 
-    def test_model_dump(self):
+    def test_model_dump(self) -> None:
         """Test model_dump returns dictionary."""
         dto = UserBuildDTO(username="alice", email="alice@example.com")
         data = dto.model_dump()
@@ -189,7 +193,7 @@ class TestBuildDTOSerialization:
         assert data["username"] == "alice"
         assert data["email"] == "alice@example.com"
 
-    def test_model_dump_json(self):
+    def test_model_dump_json(self) -> None:
         """Test model_dump_json returns JSON string."""
         dto = UserBuildDTO(username="alice", email="alice@example.com")
         json_str = dto.model_dump_json()
@@ -197,7 +201,7 @@ class TestBuildDTOSerialization:
         assert isinstance(json_str, str)
         assert "alice" in json_str
 
-    def test_model_dump_exclude(self):
+    def test_model_dump_exclude(self) -> None:
         """Test model_dump with exclude option."""
         dto = UserBuildWithOptionalDTO(
             username="alice", email="alice@example.com", tutor="bob"
@@ -212,7 +216,7 @@ class TestBuildDTOSerialization:
 class TestBuildDTOWithComplexData:
     """Test BuildDTO with complex data scenarios."""
 
-    def test_nested_lists(self):
+    def test_nested_lists(self) -> None:
         """Test BuildDTO with complex list data."""
         dto = UserBuildWithOptionalDTO(
             username="test",
@@ -222,21 +226,21 @@ class TestBuildDTOWithComplexData:
 
         assert len(dto.friends) == 5
 
-    def test_unicode_data(self):
+    def test_unicode_data(self) -> None:
         """Test BuildDTO with unicode data."""
         dto = UserBuildDTO(username="用户名", email="test@例え.jp")
 
         assert dto.username == "用户名"
         assert "例え" in dto.email
 
-    def test_special_characters(self):
+    def test_special_characters(self) -> None:
         """Test BuildDTO with special characters."""
         dto = UserBuildDTO(username="user@#$%", email="test+tag@example.com")
 
         assert dto.username == "user@#$%"
         assert dto.email == "test+tag@example.com"
 
-    def test_very_long_strings(self):
+    def test_very_long_strings(self) -> None:
         """Test BuildDTO with very long strings."""
         long_username = "a" * 1000
         dto = UserBuildDTO(username=long_username, email="test@example.com")
@@ -247,14 +251,14 @@ class TestBuildDTOWithComplexData:
 class TestBuildDTOEquality:
     """Test BuildDTO equality."""
 
-    def test_same_data_equal(self):
+    def test_same_data_equal(self) -> None:
         """Test that BuildDTOs with same data are equal."""
         dto1 = UserBuildDTO(username="alice", email="alice@example.com")
         dto2 = UserBuildDTO(username="alice", email="alice@example.com")
 
         assert dto1 == dto2
 
-    def test_different_data_not_equal(self):
+    def test_different_data_not_equal(self) -> None:
         """Test that BuildDTOs with different data are not equal."""
         dto1 = UserBuildDTO(username="alice", email="alice@example.com")
         dto2 = UserBuildDTO(username="bob", email="bob@example.com")
@@ -265,7 +269,7 @@ class TestBuildDTOEquality:
 class TestBuildDTOImmutability:
     """Test BuildDTO mutability (BuildDTOs are not frozen by default)."""
 
-    def test_can_modify_build_dto_fields(self):
+    def test_can_modify_build_dto_fields(self) -> None:
         """Test that BuildDTO fields can be modified."""
         dto = UserBuildDTO(username="alice", email="alice@example.com")
         dto.username = "bob"

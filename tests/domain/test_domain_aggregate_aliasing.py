@@ -7,10 +7,9 @@ from typing import Annotated
 import pytest
 from pydantic import ValidationError
 
-from potato.domain import Domain
 from potato.domain.aggregates import Aggregate
 
-from .conftest import Buyer, Product, Seller
+from ..fixtures.domains import Buyer, Product, Seller, User
 
 # =============================================================================
 # Domain Aggregate Test Classes with Aliasing
@@ -65,8 +64,8 @@ class TestDomainAggregateWithAliasingCreation:
     """Test creating domain aggregates with aliased types."""
 
     def test_create_basic_transaction(
-        self, buyer_user, seller_user, smartphone_product
-    ):
+        self, buyer_user: User, seller_user: User, smartphone_product: Product
+    ) -> None:
         """Test creating a basic transaction."""
         transaction = Transaction(
             buyer_id=buyer_user.id,
@@ -84,7 +83,9 @@ class TestDomainAggregateWithAliasingCreation:
         assert transaction.product.name == "Smartphone"
         assert transaction.transaction_amount == 999
 
-    def test_create_simple_transaction(self, buyer_user, seller_user):
+    def test_create_simple_transaction(
+        self, buyer_user: User, seller_user: User
+    ) -> None:
         """Test creating simple transaction without product."""
         transaction = SimpleTransaction(
             buyer_id=buyer_user.id, seller_id=seller_user.id, amount=500
@@ -94,7 +95,9 @@ class TestDomainAggregateWithAliasingCreation:
         assert transaction.seller_id == 20
         assert transaction.amount == 500
 
-    def test_create_detailed_transaction(self, buyer_user, seller_user, laptop_product):
+    def test_create_detailed_transaction(
+        self, buyer_user: User, seller_user: User, laptop_product: Product
+    ) -> None:
         """Test creating detailed transaction with all fields."""
         transaction = DetailedTransaction(
             buyer_id=buyer_user.id,
@@ -119,7 +122,9 @@ class TestDomainAggregateWithAliasingCreation:
 class TestDomainAggregateWithAliasingAccess:
     """Test accessing fields in aliased domain aggregates."""
 
-    def test_access_buyer_fields(self, buyer_user, seller_user, simple_product):
+    def test_access_buyer_fields(
+        self, buyer_user: User, seller_user: User, simple_product: Product
+    ) -> None:
         """Test accessing buyer-related fields."""
         transaction = Transaction(
             buyer_id=buyer_user.id,
@@ -133,7 +138,9 @@ class TestDomainAggregateWithAliasingAccess:
         assert transaction.buyer_id == 10
         assert transaction.buyer_name == "buyer1"
 
-    def test_access_seller_fields(self, buyer_user, seller_user, simple_product):
+    def test_access_seller_fields(
+        self, buyer_user: User, seller_user: User, simple_product: Product
+    ) -> None:
         """Test accessing seller-related fields."""
         transaction = Transaction(
             buyer_id=buyer_user.id,
@@ -148,8 +155,8 @@ class TestDomainAggregateWithAliasingAccess:
         assert transaction.seller_name == "seller1"
 
     def test_access_nested_product_fields(
-        self, buyer_user, seller_user, laptop_product
-    ):
+        self, buyer_user: User, seller_user: User, laptop_product: Product
+    ) -> None:
         """Test accessing nested product domain fields."""
         transaction = Transaction(
             buyer_id=buyer_user.id,
@@ -164,7 +171,9 @@ class TestDomainAggregateWithAliasingAccess:
         assert transaction.product.name == "Laptop"
         assert transaction.product.description == "High-performance laptop"
 
-    def test_modify_transaction_fields(self, buyer_user, seller_user, simple_product):
+    def test_modify_transaction_fields(
+        self, buyer_user: User, seller_user: User, simple_product: Product
+    ) -> None:
         """Test modifying transaction fields."""
         transaction = Transaction(
             buyer_id=buyer_user.id,
@@ -182,7 +191,9 @@ class TestDomainAggregateWithAliasingAccess:
 class TestDomainAggregateWithAliasingSerialization:
     """Test serialization of aliased domain aggregates."""
 
-    def test_model_dump(self, buyer_user, seller_user, smartphone_product):
+    def test_model_dump(
+        self, buyer_user: User, seller_user: User, smartphone_product: Product
+    ) -> None:
         """Test model_dump includes all fields."""
         transaction = Transaction(
             buyer_id=buyer_user.id,
@@ -201,7 +212,9 @@ class TestDomainAggregateWithAliasingSerialization:
         assert data["product"]["name"] == "Smartphone"
         assert data["transaction_amount"] == 999
 
-    def test_model_dump_json(self, buyer_user, seller_user, simple_product):
+    def test_model_dump_json(
+        self, buyer_user: User, seller_user: User, simple_product: Product
+    ) -> None:
         """Test JSON serialization."""
         transaction = Transaction(
             buyer_id=buyer_user.id,
@@ -218,7 +231,9 @@ class TestDomainAggregateWithAliasingSerialization:
         assert "seller1" in json_str
         assert "Widget" in json_str
 
-    def test_model_dump_exclude(self, buyer_user, seller_user, simple_product):
+    def test_model_dump_exclude(
+        self, buyer_user: User, seller_user: User, simple_product: Product
+    ) -> None:
         """Test model_dump with exclude option."""
         transaction = Transaction(
             buyer_id=buyer_user.id,
@@ -238,7 +253,9 @@ class TestDomainAggregateWithAliasingSerialization:
 class TestDomainAggregateWithAliasingValidation:
     """Test validation of aliased domain aggregates."""
 
-    def test_missing_buyer_field_raises_error(self, seller_user, simple_product):
+    def test_missing_buyer_field_raises_error(
+        self, seller_user: User, simple_product: Product
+    ) -> None:
         """Test that missing buyer field raises error."""
         with pytest.raises(ValidationError):
             Transaction(
@@ -249,7 +266,9 @@ class TestDomainAggregateWithAliasingValidation:
                 transaction_amount=100,
             )
 
-    def test_missing_seller_field_raises_error(self, buyer_user, simple_product):
+    def test_missing_seller_field_raises_error(
+        self, buyer_user: User, simple_product: Product
+    ) -> None:
         """Test that missing seller field raises error."""
         with pytest.raises(ValidationError):
             Transaction(
@@ -260,7 +279,9 @@ class TestDomainAggregateWithAliasingValidation:
                 transaction_amount=100,
             )
 
-    def test_missing_product_raises_error(self, buyer_user, seller_user):
+    def test_missing_product_raises_error(
+        self, buyer_user: User, seller_user: User
+    ) -> None:
         """Test that missing product raises error."""
         with pytest.raises(ValidationError):
             Transaction(
@@ -273,8 +294,8 @@ class TestDomainAggregateWithAliasingValidation:
             )
 
     def test_invalid_type_for_extracted_field(
-        self, buyer_user, seller_user, simple_product
-    ):
+        self, buyer_user: User, seller_user: User, simple_product: Product
+    ) -> None:
         """Test that invalid type for extracted field raises error."""
         with pytest.raises(ValidationError):
             Transaction(
@@ -290,7 +311,9 @@ class TestDomainAggregateWithAliasingValidation:
 class TestDomainAggregateWithAliasingEquality:
     """Test equality of aliased domain aggregates."""
 
-    def test_same_data_equal(self, buyer_user, seller_user, simple_product):
+    def test_same_data_equal(
+        self, buyer_user: User, seller_user: User, simple_product: Product
+    ) -> None:
         """Test that transactions with same data are equal."""
         transaction1 = Transaction(
             buyer_id=buyer_user.id,
@@ -311,7 +334,9 @@ class TestDomainAggregateWithAliasingEquality:
 
         assert transaction1 == transaction2
 
-    def test_different_amount_not_equal(self, buyer_user, seller_user, simple_product):
+    def test_different_amount_not_equal(
+        self, buyer_user: User, seller_user: User, simple_product: Product
+    ) -> None:
         """Test that different amounts make transactions unequal."""
         transaction1 = Transaction(
             buyer_id=buyer_user.id,
@@ -333,8 +358,12 @@ class TestDomainAggregateWithAliasingEquality:
         assert transaction1 != transaction2
 
     def test_different_product_not_equal(
-        self, buyer_user, seller_user, simple_product, laptop_product
-    ):
+        self,
+        buyer_user: User,
+        seller_user: User,
+        simple_product: Product,
+        laptop_product: Product,
+    ) -> None:
         """Test that different products make transactions unequal."""
         transaction1 = Transaction(
             buyer_id=buyer_user.id,
@@ -359,7 +388,9 @@ class TestDomainAggregateWithAliasingEquality:
 class TestDomainAggregateComplexScenarios:
     """Test complex scenarios with aliased domain aggregates."""
 
-    def test_same_user_as_buyer_and_seller(self, simple_user, simple_product):
+    def test_same_user_as_buyer_and_seller(
+        self, simple_user: User, simple_product: Product
+    ) -> None:
         """Test transaction where buyer and seller are same user."""
         transaction = Transaction(
             buyer_id=simple_user.id,
@@ -373,7 +404,9 @@ class TestDomainAggregateComplexScenarios:
         assert transaction.buyer_id == transaction.seller_id
         assert transaction.buyer_name == transaction.seller_name
 
-    def test_zero_amount_transaction(self, buyer_user, seller_user, simple_product):
+    def test_zero_amount_transaction(
+        self, buyer_user: User, seller_user: User, simple_product: Product
+    ) -> None:
         """Test transaction with zero amount."""
         transaction = Transaction(
             buyer_id=buyer_user.id,
@@ -386,7 +419,9 @@ class TestDomainAggregateComplexScenarios:
 
         assert transaction.transaction_amount == 0
 
-    def test_negative_amount_allowed(self, buyer_user, seller_user, simple_product):
+    def test_negative_amount_allowed(
+        self, buyer_user: User, seller_user: User, simple_product: Product
+    ) -> None:
         """Test that negative amounts are allowed (refund scenario)."""
         transaction = Transaction(
             buyer_id=buyer_user.id,
@@ -399,7 +434,9 @@ class TestDomainAggregateComplexScenarios:
 
         assert transaction.transaction_amount == -50
 
-    def test_large_transaction_amount(self, buyer_user, seller_user, laptop_product):
+    def test_large_transaction_amount(
+        self, buyer_user: User, seller_user: User, laptop_product: Product
+    ) -> None:
         """Test transaction with very large amount."""
         transaction = Transaction(
             buyer_id=buyer_user.id,
@@ -413,8 +450,8 @@ class TestDomainAggregateComplexScenarios:
         assert transaction.transaction_amount == 999999999
 
     def test_detailed_transaction_with_optional_fields(
-        self, buyer_user, seller_user, simple_product
-    ):
+        self, buyer_user: User, seller_user: User, simple_product: Product
+    ) -> None:
         """Test detailed transaction with and without optional fields."""
         # Without optional field
         transaction1 = DetailedTransaction(

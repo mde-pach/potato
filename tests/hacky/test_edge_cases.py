@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Annotated
+from typing import Annotated, Type
 
 import pytest
 from pydantic import ValidationError
@@ -11,7 +11,7 @@ from potato.domain import Domain
 from potato.domain.aggregates import Aggregate
 from potato.dto import BuildDTO, ViewDTO
 
-from .conftest import Buyer, Product, Seller, User
+from ..fixtures.domains import Buyer, Price, Product, Seller, User
 
 # =============================================================================
 # Edge Case Test Classes
@@ -46,38 +46,38 @@ class OptionalOnlyDomain(Domain):
 class TestDomainEdgeCases:
     """Test edge cases for Domain models."""
 
-    def test_empty_domain(self):
+    def test_empty_domain(self) -> None:
         """Test creating domain with no fields."""
         domain = EmptyDomain()
         assert isinstance(domain, EmptyDomain)
 
-    def test_single_field_domain(self):
+    def test_single_field_domain(self) -> None:
         """Test domain with single field."""
         domain = SingleFieldDomain(value="test")
         assert domain.value == "test"
 
-    def test_optional_only_domain_with_no_args(self):
+    def test_optional_only_domain_with_no_args(self) -> None:
         """Test domain with only optional fields and no arguments."""
         domain = OptionalOnlyDomain()
         assert domain.optional1 is None
         assert domain.optional2 is None
         assert domain.optional3 == []
 
-    def test_optional_only_domain_with_some_args(self):
+    def test_optional_only_domain_with_some_args(self) -> None:
         """Test domain with only optional fields and some arguments."""
         domain = OptionalOnlyDomain(optional1="test", optional3=["a", "b"])
         assert domain.optional1 == "test"
         assert domain.optional2 is None
         assert domain.optional3 == ["a", "b"]
 
-    def test_very_long_field_values(self, user_class):
+    def test_very_long_field_values(self, user_class: Type[User]) -> None:
         """Test domain with very long field values."""
         long_value = "x" * 10000
         user = user_class(id=1, username=long_value, email=long_value)
         assert len(user.username) == 10000
         assert len(user.email) == 10000
 
-    def test_special_characters_in_all_fields(self, user_class):
+    def test_special_characters_in_all_fields(self, user_class: Type[User]) -> None:
         """Test domain with special characters in all string fields."""
         user = user_class(
             id=1,
@@ -87,9 +87,10 @@ class TestDomainEdgeCases:
         )
         assert "!@#$" in user.username
         assert "+" in user.email
+        assert user.tutor is not None
         assert "<script>" in user.tutor
 
-    def test_zero_and_negative_numbers(self, price_class):
+    def test_zero_and_negative_numbers(self, price_class: Type[Price]) -> None:
         """Test domain with zero and negative numbers."""
         price1 = price_class(amount=0, currency="USD")
         assert price1.amount == 0
@@ -97,7 +98,7 @@ class TestDomainEdgeCases:
         price2 = price_class(amount=-100, currency="USD")
         assert price2.amount == -100
 
-    def test_empty_lists(self, user_class):
+    def test_empty_lists(self, user_class: Type[User]) -> None:
         """Test domain with explicitly empty lists."""
         user = user_class(id=1, username="test", email="test@example.com", friends=[])
         assert user.friends == []
@@ -124,14 +125,14 @@ class EmptyProductView(ViewDTO[Product]):
 class TestViewDTOEdgeCases:
     """Test edge cases for ViewDTO."""
 
-    def test_minimal_view_with_one_field(self, simple_user):
+    def test_minimal_view_with_one_field(self, simple_user: User) -> None:
         """Test ViewDTO with just one field."""
         view = MinimalView.build(simple_user)
         assert view.id == 1
         assert not hasattr(view, "username")
         assert not hasattr(view, "email")
 
-    def test_view_from_domain_with_none_values(self, user_class):
+    def test_view_from_domain_with_none_values(self, user_class: Type[User]) -> None:
         """Test ViewDTO from domain with None values."""
         user = user_class(id=1, username="test", email="test@example.com", tutor=None)
 
@@ -143,7 +144,7 @@ class TestViewDTOEdgeCases:
         view = UserViewWithTutor.build(user)
         assert view.tutor is None
 
-    def test_view_from_domain_with_empty_list(self, user_class):
+    def test_view_from_domain_with_empty_list(self, user_class: Type[User]) -> None:
         """Test ViewDTO from domain with empty list."""
         user = user_class(id=1, username="test", email="test@example.com", friends=[])
 
@@ -154,7 +155,7 @@ class TestViewDTOEdgeCases:
         view = UserViewWithFriends.build(user)
         assert view.friends == []
 
-    def test_view_with_very_long_strings(self, user_class):
+    def test_view_with_very_long_strings(self, user_class: Type[User]) -> None:
         """Test ViewDTO with very long string values."""
         long_value = "y" * 10000
         user = user_class(id=1, username=long_value, email="test@example.com")
@@ -180,12 +181,12 @@ class MinimalBuildDTO(BuildDTO[User]):
 class TestBuildDTOEdgeCases:
     """Test edge cases for BuildDTO."""
 
-    def test_minimal_build_dto(self):
+    def test_minimal_build_dto(self) -> None:
         """Test BuildDTO with just one field."""
         dto = MinimalBuildDTO(email="test@example.com")
         assert dto.email == "test@example.com"
 
-    def test_build_dto_with_none_values(self):
+    def test_build_dto_with_none_values(self) -> None:
         """Test BuildDTO with None values."""
 
         class BuildWithOptional(BuildDTO[User]):
@@ -196,7 +197,7 @@ class TestBuildDTOEdgeCases:
         dto = BuildWithOptional(username="test", email="test@example.com", tutor=None)
         assert dto.tutor is None
 
-    def test_build_dto_with_empty_list(self):
+    def test_build_dto_with_empty_list(self) -> None:
         """Test BuildDTO with empty list."""
 
         class BuildWithList(BuildDTO[User]):
@@ -207,7 +208,7 @@ class TestBuildDTOEdgeCases:
         dto = BuildWithList(username="test", email="test@example.com", friends=[])
         assert dto.friends == []
 
-    def test_build_dto_type_coercion(self):
+    def test_build_dto_type_coercion(self) -> None:
         """Test BuildDTO with type coercion."""
 
         class BuildWithCoercion(BuildDTO[User]):
@@ -233,14 +234,14 @@ class MinimalAggregate(Aggregate[User]):
 class TestAggregateEdgeCases:
     """Test edge cases for Aggregate domains."""
 
-    def test_aggregate_with_one_domain(self, simple_user):
+    def test_aggregate_with_one_domain(self, simple_user: User) -> None:
         """Test aggregate with just one domain."""
         agg = MinimalAggregate(user=simple_user)
         assert agg.user.id == 1
 
     def test_aggregate_with_none_in_optional_domain_field(
-        self, simple_user, simple_product
-    ):
+        self, simple_user: User, simple_product: Product
+    ) -> None:
         """Test aggregate where nested domain has None values."""
 
         class AggregateWithOptional(Aggregate[User, Product]):
@@ -254,8 +255,8 @@ class TestAggregateEdgeCases:
         assert agg.user.tutor is None
 
     def test_aggregate_with_multiple_same_domain_all_none_tutor(
-        self, buyer_user, seller_user, simple_product
-    ):
+        self, buyer_user: User, seller_user: User, simple_product: Product
+    ) -> None:
         """Test aggregate with multiple instances of same domain type."""
 
         class MultiUserAggregate(Aggregate[Buyer, Seller, Product]):
@@ -280,12 +281,12 @@ class TestAggregateEdgeCases:
 class TestErrorHandling:
     """Test error handling across components."""
 
-    def test_domain_with_invalid_type(self, user_class):
+    def test_domain_with_invalid_type(self, user_class: Type[User]) -> None:
         """Test that invalid types raise appropriate errors."""
         with pytest.raises(ValidationError):
             user_class(id="string", username="test", email="test@example.com")
 
-    def test_view_dto_build_with_none_argument(self):
+    def test_view_dto_build_with_none_argument(self) -> None:
         """Test ViewDTO build with None argument."""
 
         class SimpleView(ViewDTO[User]):
@@ -294,7 +295,7 @@ class TestErrorHandling:
         with pytest.raises((ValidationError, TypeError, AttributeError)):
             SimpleView.build(None)
 
-    def test_build_dto_with_wrong_types(self):
+    def test_build_dto_with_wrong_types(self) -> None:
         """Test BuildDTO with wrong field types."""
 
         class SimpleBuild(BuildDTO[User]):
@@ -305,7 +306,7 @@ class TestErrorHandling:
         with pytest.raises(ValidationError):
             SimpleBuild(username=123, email=456)
 
-    def test_aggregate_with_mismatched_types(self, simple_user):
+    def test_aggregate_with_mismatched_types(self, simple_user: User) -> None:
         """Test aggregate with mismatched field types."""
 
         class TypedAggregate(Aggregate[User, Product]):
@@ -325,26 +326,26 @@ class TestErrorHandling:
 class TestBoundaryValues:
     """Test boundary values."""
 
-    def test_max_int_value(self, user_class):
+    def test_max_int_value(self, user_class: Type[User]) -> None:
         """Test maximum integer value."""
         max_int = 2**63 - 1
         user = user_class(id=max_int, username="test", email="test@example.com")
         assert user.id == max_int
 
-    def test_min_int_value(self, user_class):
+    def test_min_int_value(self, user_class: Type[User]) -> None:
         """Test minimum integer value."""
         min_int = -(2**63)
         user = user_class(id=min_int, username="test", email="test@example.com")
         assert user.id == min_int
 
-    def test_empty_string_in_all_fields(self, user_class):
+    def test_empty_string_in_all_fields(self, user_class: Type[User]) -> None:
         """Test empty strings in all string fields."""
         user = user_class(id=1, username="", email="", tutor="")
         assert user.username == ""
         assert user.email == ""
         assert user.tutor == ""
 
-    def test_single_character_strings(self, user_class):
+    def test_single_character_strings(self, user_class: Type[User]) -> None:
         """Test single character strings."""
         user = user_class(id=1, username="a", email="b", tutor="c")
         assert user.username == "a"
@@ -359,15 +360,16 @@ class TestBoundaryValues:
 class TestUnicodeAndEncoding:
     """Test unicode and encoding edge cases."""
 
-    def test_emoji_in_fields(self, user_class):
+    def test_emoji_in_fields(self, user_class: Type[User]) -> None:
         """Test emoji characters in fields."""
         user = user_class(
             id=1, username="🚀 rocket", email="test@example.com", tutor="🎓 professor"
         )
         assert "🚀" in user.username
+        assert user.tutor is not None
         assert "🎓" in user.tutor
 
-    def test_mixed_unicode_scripts(self, user_class):
+    def test_mixed_unicode_scripts(self, user_class: Type[User]) -> None:
         """Test mixed unicode scripts."""
         user = user_class(
             id=1, username="Hello नमस्ते こんにちは 你好", email="test@example.com"
@@ -377,7 +379,7 @@ class TestUnicodeAndEncoding:
         assert "こんにちは" in user.username
         assert "你好" in user.username
 
-    def test_rtl_languages(self, user_class):
+    def test_rtl_languages(self, user_class: Type[User]) -> None:
         """Test right-to-left languages."""
         user = user_class(
             id=1,
@@ -387,7 +389,7 @@ class TestUnicodeAndEncoding:
         assert "مرحبا" in user.username
         assert "שלום" in user.username
 
-    def test_zero_width_characters(self, user_class):
+    def test_zero_width_characters(self, user_class: Type[User]) -> None:
         """Test zero-width characters."""
         # Zero-width space
         user = user_class(id=1, username="test\u200buser", email="test@example.com")

@@ -7,10 +7,9 @@ from typing import Annotated
 import pytest
 from pydantic import ValidationError
 
-from potato.domain import Domain
 from potato.domain.aggregates import Aggregate
 
-from .conftest import Price, Product, User
+from ..fixtures.domains import Price, Product, User
 
 # =============================================================================
 # Aggregate Test Classes

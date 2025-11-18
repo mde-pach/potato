@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
-from typing import Annotated
+from typing import Annotated, Type
 
 import pytest
 from pydantic import ValidationError
 
 from potato.dto import ViewDTO
 
-from .conftest import Product, User
+from ..fixtures.domains import Product, User
 
 # =============================================================================
 # ViewDTO Test Classes
@@ -63,7 +63,7 @@ class RenamedProductView(ViewDTO[Product]):
 class TestViewDTOBasicMapping:
     """Test basic ViewDTO field mapping."""
 
-    def test_build_simple_user_view(self, simple_user):
+    def test_build_simple_user_view(self, simple_user: User) -> None:
         """Test building a simple ViewDTO with direct field mapping."""
         view = SimpleUserView.build(simple_user)
 
@@ -71,7 +71,7 @@ class TestViewDTOBasicMapping:
         assert view.username == "alice"
         assert view.email == "alice@example.com"
 
-    def test_build_user_view_with_renamed_field(self, simple_user):
+    def test_build_user_view_with_renamed_field(self, simple_user: User) -> None:
         """Test building ViewDTO with renamed field (username → login)."""
         view = UserView.build(simple_user)
 
@@ -79,7 +79,7 @@ class TestViewDTOBasicMapping:
         assert view.login == "alice"  # Mapped from username
         assert view.email == "alice@example.com"
 
-    def test_build_partial_view(self, complete_user):
+    def test_build_partial_view(self, complete_user: User) -> None:
         """Test building ViewDTO that only includes subset of fields."""
         view = PartialUserView.build(complete_user)
 
@@ -88,7 +88,7 @@ class TestViewDTOBasicMapping:
         # email is not in the view
         assert not hasattr(view, "email")
 
-    def test_build_product_view(self, simple_product):
+    def test_build_product_view(self, simple_product: Product) -> None:
         """Test building a product view."""
         view = ProductView.build(simple_product)
 
@@ -96,7 +96,7 @@ class TestViewDTOBasicMapping:
         assert view.name == "Widget"
         assert view.description == "A useful widget"
 
-    def test_build_renamed_product_view(self, laptop_product):
+    def test_build_renamed_product_view(self, laptop_product: Product) -> None:
         """Test building a product view with renamed fields."""
         view = RenamedProductView.build(laptop_product)
 
@@ -108,25 +108,25 @@ class TestViewDTOBasicMapping:
 class TestViewDTOImmutability:
     """Test that ViewDTO instances are immutable."""
 
-    def test_view_dto_is_frozen(self, simple_user):
+    def test_view_dto_is_frozen(self, simple_user: User) -> None:
         """Test that ViewDTO instances cannot be modified."""
         view = UserView.build(simple_user)
 
         with pytest.raises((AttributeError, ValidationError)):
             view.id = 999
 
-    def test_cannot_add_new_attributes(self, simple_user):
+    def test_cannot_add_new_attributes(self, simple_user: User) -> None:
         """Test that new attributes cannot be added to ViewDTO."""
         view = UserView.build(simple_user)
 
         with pytest.raises((AttributeError, ValidationError)):
-            view.new_field = "value"
+            view.new_field = "value"  # type: ignore[attr-defined]
 
 
 class TestViewDTOSerialization:
     """Test ViewDTO serialization."""
 
-    def test_model_dump(self, simple_user):
+    def test_model_dump(self, simple_user: User) -> None:
         """Test model_dump returns correct dictionary."""
         view = UserView.build(simple_user)
         data = view.model_dump()
@@ -135,7 +135,7 @@ class TestViewDTOSerialization:
         assert data["login"] == "alice"
         assert data["email"] == "alice@example.com"
 
-    def test_model_dump_json(self, simple_user):
+    def test_model_dump_json(self, simple_user: User) -> None:
         """Test model_dump_json returns valid JSON string."""
         view = UserView.build(simple_user)
         json_str = view.model_dump_json()
@@ -144,7 +144,7 @@ class TestViewDTOSerialization:
         assert "alice" in json_str
         assert "login" in json_str
 
-    def test_serialization_preserves_types(self, user_class):
+    def test_serialization_preserves_types(self, user_class: Type[User]) -> None:
         """Test that serialization preserves data types."""
         user = user_class(
             id=123,
@@ -162,7 +162,7 @@ class TestViewDTOSerialization:
 class TestViewDTOWithDifferentData:
     """Test ViewDTO with various data scenarios."""
 
-    def test_user_with_empty_strings(self, user_class):
+    def test_user_with_empty_strings(self, user_class: Type[User]) -> None:
         """Test ViewDTO with empty string values."""
         user = user_class(id=1, username="", email="")
         view = SimpleUserView.build(user)
@@ -170,7 +170,7 @@ class TestViewDTOWithDifferentData:
         assert view.username == ""
         assert view.email == ""
 
-    def test_user_with_special_characters(self, user_class):
+    def test_user_with_special_characters(self, user_class: Type[User]) -> None:
         """Test ViewDTO with special characters."""
         user = user_class(id=1, username="user@#$%", email="test+special@example.com")
         view = SimpleUserView.build(user)
@@ -178,7 +178,7 @@ class TestViewDTOWithDifferentData:
         assert view.username == "user@#$%"
         assert view.email == "test+special@example.com"
 
-    def test_user_with_unicode(self, user_class):
+    def test_user_with_unicode(self, user_class: Type[User]) -> None:
         """Test ViewDTO with unicode characters."""
         user = user_class(id=1, username="用户名", email="test@例え.jp")
         view = SimpleUserView.build(user)
@@ -186,7 +186,7 @@ class TestViewDTOWithDifferentData:
         assert view.username == "用户名"
         assert view.email == "test@例え.jp"
 
-    def test_multiple_field_mappings(self, user_class):
+    def test_multiple_field_mappings(self, user_class: Type[User]) -> None:
         """Test ViewDTO with multiple renamed fields."""
         user = user_class(id=1, username="testuser", email="test@example.com")
         view = UserView.build(user)
@@ -199,19 +199,19 @@ class TestViewDTOWithDifferentData:
 class TestViewDTOErrorHandling:
     """Test ViewDTO error handling."""
 
-    def test_build_with_no_arguments_raises_error(self):
+    def test_build_with_no_arguments_raises_error(self) -> None:
         """Test that building without arguments raises an error."""
         with pytest.raises((ValueError, TypeError)):
             UserView.build()
 
     def test_build_with_multiple_arguments_raises_error(
-        self, simple_user, complete_user
-    ):
+        self, simple_user: User, complete_user: User
+    ) -> None:
         """Test that building with multiple arguments raises an error for single domain DTO."""
         with pytest.raises(ValueError):
             UserView.build(simple_user, complete_user)
 
-    def test_build_with_wrong_domain_type_works(self, simple_product):
+    def test_build_with_wrong_domain_type_works(self, simple_product: Product) -> None:
         """Test that building with wrong domain type works if fields match."""
         # This might work if field names match, but is not recommended
         # The framework is permissive in this case
@@ -227,7 +227,7 @@ class TestViewDTOErrorHandling:
 class TestViewDTOEquality:
     """Test ViewDTO equality."""
 
-    def test_same_data_produces_equal_views(self, user_class):
+    def test_same_data_produces_equal_views(self, user_class: Type[User]) -> None:
         """Test that ViewDTOs built from same data are equal."""
         user1 = user_class(id=1, username="alice", email="alice@example.com")
         user2 = user_class(id=1, username="alice", email="alice@example.com")
@@ -237,7 +237,9 @@ class TestViewDTOEquality:
 
         assert view1 == view2
 
-    def test_different_data_produces_unequal_views(self, simple_user, complete_user):
+    def test_different_data_produces_unequal_views(
+        self, simple_user: User, complete_user: User
+    ) -> None:
         """Test that ViewDTOs built from different data are not equal."""
         view1 = UserView.build(simple_user)
         view2 = UserView.build(complete_user)
