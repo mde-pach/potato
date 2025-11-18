@@ -7,14 +7,18 @@ from typing import Annotated
 import pytest
 from pydantic import ValidationError
 
+from potato.domain import Aggregate
 from potato.dto import ViewDTO
-from tests.conftest import Order
 
 from ..fixtures.domains import Buyer, Product, Seller, User
 
 # =============================================================================
 # Aliased ViewDTO Test Classes
 # =============================================================================
+
+
+class Order(Aggregate[Buyer, Seller, Product]):
+    pass
 
 
 class OrderView(ViewDTO[Order]):
@@ -32,7 +36,11 @@ class OrderView(ViewDTO[Order]):
     product_description: Annotated[str, Product.description]
 
 
-class SimpleAliasedView(ViewDTO[Order]):
+class Relation(Aggregate[Buyer, Seller]):
+    pass
+
+
+class SimpleAliasedView(ViewDTO[Relation]):
     """Simple ViewDTO with just buyer and seller."""
 
     buyer_id: Annotated[int, Buyer.id]
