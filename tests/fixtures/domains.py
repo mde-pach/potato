@@ -44,4 +44,3 @@ class Order(Aggregate[User, Price, Product]):
 # Aliased types for multi-instance scenarios
 Buyer = User.alias("buyer")
 Seller = User.alias("seller")
-

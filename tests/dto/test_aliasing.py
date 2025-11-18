@@ -7,8 +7,8 @@ from typing import Annotated
 import pytest
 from pydantic import ValidationError
 
-from potato.domain.aggregates import Aggregate
 from potato.dto import ViewDTO
+from tests.conftest import Order
 
 from ..fixtures.domains import Buyer, Product, Seller, User
 
@@ -17,7 +17,7 @@ from ..fixtures.domains import Buyer, Product, Seller, User
 # =============================================================================
 
 
-class OrderView(ViewDTO[Aggregate[Buyer, Seller, Product]]):
+class OrderView(ViewDTO[Order]):
     """ViewDTO with aliased domains for buyer and seller."""
 
     buyer_id: Annotated[int, Buyer.id]
@@ -32,7 +32,7 @@ class OrderView(ViewDTO[Aggregate[Buyer, Seller, Product]]):
     product_description: Annotated[str, Product.description]
 
 
-class SimpleAliasedView(ViewDTO[Aggregate[Buyer, Seller]]):
+class SimpleAliasedView(ViewDTO[Order]):
     """Simple ViewDTO with just buyer and seller."""
 
     buyer_id: Annotated[int, Buyer.id]
@@ -41,7 +41,7 @@ class SimpleAliasedView(ViewDTO[Aggregate[Buyer, Seller]]):
     seller_name: Annotated[str, Seller.username]
 
 
-class PartialAliasedView(ViewDTO[Aggregate[Buyer, Seller, Product]]):
+class PartialAliasedView(ViewDTO[Order]):
     """ViewDTO that only includes some fields from aliased domains."""
 
     buyer_id: Annotated[int, Buyer.id]
