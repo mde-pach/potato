@@ -94,10 +94,11 @@ class ViewDTOMeta(DTOMeta):
                         aggregate_args = get_args(first_arg)
                         if aggregate_args:
                             for domain_spec in aggregate_args:
-                                # Check if it's an AliasedType instance (created via Domain.alias())
-                                from potato.domain.domain import AliasedType
-
-                                if isinstance(domain_spec, AliasedType):
+                                # Check if it's an AliasedType (created via Domain.alias())
+                                # AliasedType returns a type/class, not an instance, so we check for attributes
+                                if hasattr(domain_spec, "_domain_cls") and hasattr(
+                                    domain_spec, "_alias"
+                                ):
                                     domain_type = domain_spec._domain_cls
                                     alias = domain_spec._alias
                                 else:
@@ -380,8 +381,20 @@ class ViewDTO[D](BaseModel, metaclass=ViewDTOMeta):
                             found = True
                             break
                     if not found:
-                        # Fallback: use the alias name directly
-                        entity_map[(entity_type, alias_name)] = entity
+                        # Raise error for unknown parameter name
+                        raise ValueError(
+                            f"{cls.__name__}.build() got unexpected parameter '{alias_name}'. "
+                            f"Expected parameters: {list(expected_params.keys())}"
+                        )
+
+            # Validate that all expected parameters are provided
+            for param_name, (expected_type, expected_alias) in expected_params.items():
+                key = (expected_type, expected_alias)
+                if key not in entity_map:
+                    raise ValueError(
+                        f"{cls.__name__}.build() missing required parameter '{param_name}' "
+                        f"of type '{expected_type.__name__}'"
+                    )
 
             # Extract data using field mappings
             mapped_data = {}

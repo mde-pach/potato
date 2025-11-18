@@ -219,6 +219,11 @@ class AliasedTypeMeta(type):
                 "__module__": domain_cls.__module__,
             },
         )
+        
+        # Explicitly set attributes after creation to ensure they're accessible
+        # This is needed because Pydantic's metaclass may interfere with namespace attributes
+        setattr(new_type, "_domain_cls", domain_cls)
+        setattr(new_type, "_alias", alias)
 
         return new_type
 
