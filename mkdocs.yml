@@ -1,0 +1,80 @@
+site_name: Potato Documentation
+site_description: Type-safe DTOs and Domain models for unidirectional data flow
+site_url: https://potato.readthedocs.io/
+repo_url: https://github.com/your-org/potato
+repo_name: potato
+
+theme:
+  name: material
+  palette:
+    - scheme: default
+      primary: blue
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - scheme: slate
+      primary: blue
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - search.suggest
+    - search.highlight
+    - content.code.annotate
+    - content.code.copy
+
+markdown_extensions:
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - admonition
+  - pymdownx.details
+  - pymdownx.tabbed:
+      alternate_style: true
+  - attr_list
+  - md_in_html
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          paths: [src]
+          options:
+            show_source: true
+            show_root_heading: true
+            show_root_toc_entry: true
+            show_object_full_path: false
+            show_category_heading: true
+            show_if_no_docstring: true
+            separate_signature: true
+            docstring_style: google
+            docstring_options:
+              ignore_init_summary: false
+
+nav:
+  - Home: index.md
+  - Concepts: concepts.md
+  - Quickstart: quickstart.md
+  - Core:
+    - Domain Models: core/domain.md
+    - ViewDTO: core/viewdto.md
+    - BuildDTO: core/builddto.md
+    - Aggregates: core/aggregates.md
+    - Aliasing: core/aliasing.md
+  - Guides:
+    - Patterns: guides/patterns.md
+    - Examples: guides/examples.md
+  - Configuration: configuration.md
+  - API Reference: api-reference.md
+

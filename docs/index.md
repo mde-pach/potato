@@ -4,7 +4,7 @@
 
 Potato is a Python library that enforces clean separation between your domain models and external data representations. Built on Pydantic, it provides type-safe Data Transfer Objects (DTOs) that ensure unidirectional data flow in your applications.
 
-## Features
+## Key Features
 
 - **Type-safe Domain Models**: Build rich domain models with compile-time validation
 - **Unidirectional Data Flow**: Separate `BuildDTO` (inbound) and `ViewDTO` (outbound) for clear boundaries
@@ -13,21 +13,7 @@ Potato is a Python library that enforces clean separation between your domain mo
 - **Immutable Views**: `ViewDTO` instances are frozen by default, preventing accidental mutations
 - **Pydantic Integration**: Built on Pydantic v2 for robust validation and serialization
 
-## Quick Start
-
-### Installation
-
-```bash
-pip install potato
-```
-
-Or with uv:
-
-```bash
-uv add potato
-```
-
-### Basic Usage
+## Quick Example
 
 ```python
 from potato.domain import Domain
@@ -58,7 +44,21 @@ print(view.login)  # "alice"
 
 # Build domain from external data
 create_dto = CreateUser(username="bob", email="bob@example.com")
-user = User(**create_dto.model_dump(), id=2)
+user = User(**create_dto.model_dump(), id=2) # In a real application, you would typically generate the entity and its auto-generated fields (e.g. ID) through a persistence layer
+```
+
+## Installation
+
+```bash
+pip install potato
+```
+
+Or with your favorite package manager:
+
+```bash
+uv add potato
+# or
+poetry add potato
 ```
 
 ## Why Potato?
@@ -74,59 +74,22 @@ Potato enforces these boundaries with type-safe DTOs that:
 - Enable compile-time validation of data flow
 - Support complex scenarios like aggregates and multiple domain instances
 
-## Documentation
+## Documentation Structure
 
-Full documentation is available at: **[Documentation Site](https://potato.readthedocs.io/)**
+- **[Concepts](concepts.md)** - Learn about DDD, DTOs, and unidirectional data flow
+- **[Quickstart](quickstart.md)** - Get up and running in minutes
+- **[Core Features](core/domain.md)** - Deep dive into Domain models, ViewDTO, BuildDTO, Aggregates, and Aliasing
+- **[Guides](guides/patterns.md)** - Common patterns and best practices
+- **[Examples](guides/examples.md)** - Complete real-world examples
+- **[API Reference](api-reference.md)** - Auto-generated API documentation
 
-Quick links:
-- **[Concepts](docs/concepts.md)** - Learn about DDD, DTOs, and unidirectional flow
-- **[Quickstart](docs/quickstart.md)** - Get up and running in minutes
-- **[Core Features](docs/core/domain.md)** - Deep dive into Domain models, ViewDTO, BuildDTO, Aggregates, and Aliasing
-- **[Guides](docs/guides/patterns.md)** - Common patterns and best practices
-- **[Examples](docs/guides/examples.md)** - Complete real-world examples
+## Next Steps
 
-## Requirements
-
-- Python >= 3.14
-- Pydantic >= 2.12.4
-
-## Development
-
-### Setup
-
-```bash
-# Clone the repository
-git clone https://github.com/your-org/potato.git
-cd potato
-
-# Install dependencies
-uv sync
-
-# Run tests
-pytest
-
-# Build documentation
-mkdocs serve
-```
-
-### Type Checking
-
-Potato includes a mypy plugin for compile-time validation. Enable it in your `pyproject.toml`:
-
-```toml
-[tool.mypy]
-plugins = ["potato.mypy"]
-```
-
-## License
-
-[Add your license here]
-
-## Contributing
-
-Contributions are welcome! Please read our contributing guidelines first.
+1. Read about [core concepts](concepts.md) to understand the philosophy
+2. Follow the [quickstart guide](quickstart.md) to build your first DTOs
+3. Explore [real-world examples](guides/examples.md) for inspiration
 
 ---
 
-**Ready to get started?** Check out the [Quickstart Guide](docs/quickstart.md) or read the [full documentation](https://potato.readthedocs.io/).
+**Ready to get started?** → [Quickstart Guide](quickstart.md)
 
