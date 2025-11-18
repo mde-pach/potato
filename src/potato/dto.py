@@ -30,9 +30,9 @@ from pydantic._internal._model_construction import (
 )
 
 if TYPE_CHECKING:
-    from domain import FieldProxy
+    from potato.domain import FieldProxy
 else:
-    from domain import FieldProxy
+    from potato.domain import FieldProxy
 
 
 @dataclass_transform(
@@ -75,10 +75,11 @@ class ViewDTOMeta(DTOMeta):
         **kwargs: Any,
     ) -> type:
         cls = super().__new__(mcs, name, bases, namespace, **kwargs)
+        alias: FieldProxy | None
 
         # Extract aggregate domain types and their aliases if present
-        domain_aliases: dict[type, list[str | None]] = {}
-        aggregate_domain_types: list[type] = []
+        domain_aliases: dict[FieldProxy, list[FieldProxy | None]] = {}
+        aggregate_domain_types: list[FieldProxy] = []
 
         for base in cls.__bases__:
             if hasattr(base, "__pydantic_generic_metadata__"):
@@ -87,27 +88,18 @@ class ViewDTOMeta(DTOMeta):
                     first_arg = metadata["args"][0]
                     aggregate_origin = get_origin(first_arg)
                     if aggregate_origin is not None:
-                        # Get the domain types from Aggregate[User, Profile, ...] or Aggregate[Annotated[User, "alias"], ...]
-                        # or Aggregate[AliasedType(User, "alias"), ...]
+                        # Get the domain types from Aggregate[User, Profile, ...] or aliased types
+                        # created via Domain.alias() like Aggregate[Buyer, Seller, ...]
+                        # where Buyer = User.alias("buyer")
                         aggregate_args = get_args(first_arg)
                         if aggregate_args:
                             for domain_spec in aggregate_args:
-                                # Check if it's an AliasedType instance
-                                from domain import AliasedType
+                                # Check if it's an AliasedType instance (created via Domain.alias())
+                                from potato.domain.domain import AliasedType
 
                                 if isinstance(domain_spec, AliasedType):
                                     domain_type = domain_spec._domain_cls
                                     alias = domain_spec._alias
-                                # Check if it's Annotated[Domain, "alias"]
-                                elif get_origin(domain_spec) is Annotated:
-                                    args = get_args(domain_spec)
-                                    domain_type = args[0]
-                                    alias = None
-                                    # Look for string alias in metadata
-                                    for meta in args[1:]:
-                                        if isinstance(meta, str):
-                                            alias = meta
-                                            break
                                 else:
                                     # Plain domain, no alias
                                     domain_type = domain_spec
@@ -149,7 +141,7 @@ class ViewDTOMeta(DTOMeta):
                             )
                             break
                         # Handle AliasedType instances like Buyer.id where Buyer = AliasedType(User, "buyer")
-                        from domain import AliasedType
+                        from potato.domain.domain import AliasedType
 
                         if isinstance(metadata, AliasedType):
                             # Extract field name from the type annotation
@@ -167,15 +159,16 @@ class ViewDTOMeta(DTOMeta):
 
         # Validate that field references use declared aliases
         if hasattr(cls, "__domain_aliases__") and field_mappings:
-            ViewDTOMeta._validate_aliases(cls, domain_aliases, field_mappings)
+            # TODO fix the type error here
+            ViewDTOMeta._validate_aliases(cls, domain_aliases, field_mappings)  # type: ignore
 
         return cls
 
     @staticmethod
     def _validate_aliases(
         cls: type,
-        domain_aliases: dict[type, list[str | None]],
-        field_mappings: dict[str, tuple[type, str, str | None]],
+        domain_aliases: dict[FieldProxy, list[FieldProxy | None]],
+        field_mappings: dict[str, tuple[FieldProxy, str, FieldProxy | None]],
     ) -> None:
         """
         Validate that field references use aliases declared in Aggregate.
@@ -198,22 +191,22 @@ class ViewDTOMeta(DTOMeta):
                 if field_alias is not None:
                     raise ValueError(
                         f"ViewDTO '{cls.__name__}' field '{view_field}' uses alias '{field_alias}' "
-                        f"but Domain '{domain_cls.__name__}' has no alias declared in Aggregate. "
+                        f"but Domain '{domain_cls.__class__.__name__}' has no alias declared in Aggregate. "
                         f"Remove the alias from the field reference."
                     )
             # If there are multiple instances, alias must be declared
             elif len(declared_aliases) > 1:
                 if field_alias is None:
                     raise ValueError(
-                        f"ViewDTO '{cls.__name__}' field '{view_field}' references Domain '{domain_cls.__name__}' "
+                        f"ViewDTO '{cls.__name__}' field '{view_field}' references Domain '{domain_cls.__class__.__name__}' "
                         f"without an alias, but multiple instances are declared in Aggregate. "
-                        f'Use Annotated[type, {domain_cls.__name__}("alias").{domain_field}] '
+                        f'Use Annotated[type, {domain_cls.__class__.__name__}("alias").{domain_field}] '
                         f"with one of the declared aliases: {[a for a in declared_aliases if a is not None]}"
                     )
                 elif field_alias not in declared_aliases:
                     raise ValueError(
                         f"ViewDTO '{cls.__name__}' field '{view_field}' uses alias '{field_alias}' "
-                        f"which is not declared in Aggregate for Domain '{domain_cls.__name__}'. "
+                        f"which is not declared in Aggregate for Domain '{domain_cls.__class__.__name__}'. "
                         f"Declared aliases: {[a for a in declared_aliases if a is not None]}"
                     )
 
@@ -224,9 +217,9 @@ class ViewDTO[D](BaseModel, metaclass=ViewDTOMeta):
 
     ViewDTO creates immutable data transfer objects from Domain models for
     external consumption (e.g., API responses). It supports:
-    1. Single domain: ViewDTO[User]
-    2. Multiple domains: ViewDTO[Aggregate[User, Profile, Settings]]
-    3. Multiple instances of same domain via aliasing: User("buyer"), User("seller")
+    1. Single domain: ViewDTO[DomainA]
+    2. Multiple domains: ViewDTO[Aggregate[DomainA, DomainB, DomainC]]
+    3. Multiple instances of same domain via aliasing: DomainA("first"), DomainA("second")
     4. Automatic field mapping via Annotated[type, Domain.field]
     5. Compile-time validation that all required Domain fields are present
 
@@ -234,41 +227,39 @@ class ViewDTO[D](BaseModel, metaclass=ViewDTOMeta):
         D: The Domain class or Aggregate[Domain1, Domain2, ...] this DTO is derived from
 
     Usage - Single domain:
-        >>> class User(Domain):
+        >>> class DomainA(Domain):
         ...     id: int
-        ...     username: str
+        ...     name: str
         >>>
-        >>> class UserView(ViewDTO[User]):
+        >>> class EntityView(ViewDTO[DomainA]):
         ...     id: int
-        ...     username: str
+        ...     name: str
         >>>
-        >>> user = User(id=1, username="alice")
-        >>> view = UserView.build(user)
+        >>> entity = DomainA(id=1, name="example")
+        >>> view = EntityView.build(entity)
 
     Usage - Multiple domains:
-        >>> class Profile(Domain):
-        ...     bio: str
+        >>> class DomainB(Domain):
+        ...     description: str
         >>>
-        >>> class UserProfileView(ViewDTO[Aggregate[User, Profile]]):
-        ...     id: Annotated[int, User.id]
-        ...     username: Annotated[str, User.username]
-        ...     bio: Annotated[str, Profile.bio]
+        >>> class CombinedView(ViewDTO[Aggregate[DomainA, DomainB]]):
+        ...     id: Annotated[int, DomainA.id]
+        ...     name: Annotated[str, DomainA.name]
+        ...     description: Annotated[str, DomainB.description]
         >>>
-        >>> view = UserProfileView.build(user, profile)
+        >>> view = CombinedView.build(entity_a, entity_b)
 
     Usage - Multiple instances of same domain (aliasing):
-        >>> class OrderView(ViewDTO[Aggregate[
-        ...     Annotated[User, "buyer"],
-        ...     Annotated[User, "seller"],
-        ...     Product
-        ... ]]):
-        ...     buyer_id: Annotated[int, User("buyer").id]
-        ...     buyer_name: Annotated[str, User("buyer").username]
-        ...     seller_id: Annotated[int, User("seller").id]
-        ...     seller_name: Annotated[str, User("seller").username]
-        ...     product_name: Annotated[str, Product.name]
+        >>> Source = DomainA.alias("source")
+        >>> Target = DomainA.alias("target")
+        >>> class RelationView(ViewDTO[Aggregate[Source, Target, DomainB]]):
+        ...     source_id: Annotated[int, Source.id]
+        ...     source_name: Annotated[str, Source.name]
+        ...     target_id: Annotated[int, Target.id]
+        ...     target_name: Annotated[str, Target.name]
+        ...     description: Annotated[str, DomainB.description]
         >>>
-        >>> view = OrderView.build(buyer=buyer, seller=seller, product=product)
+        >>> view = RelationView.build(source=first_entity, target=second_entity, domainb=entity_b)
 
     Attributes:
         __field_mappings__: Dict mapping DTO fields to (domain_class, field_name, alias)
@@ -281,7 +272,7 @@ class ViewDTO[D](BaseModel, metaclass=ViewDTOMeta):
     __domain_aliases__: ClassVar[dict[type, list[str | None]]] = {}
 
     model_config = ConfigDict(
-        extra="allow",
+        extra="ignore",
         coerce_numbers_to_str=True,
         populate_by_name=True,
         validate_by_alias=True,
@@ -295,14 +286,14 @@ class ViewDTO[D](BaseModel, metaclass=ViewDTOMeta):
         """
         Build a ViewDTO from one or more Domain instances.
 
-        For single domain ViewDTO[User]:
-            >>> view = UserView.build(user)
+        For single domain ViewDTO[DomainA]:
+            >>> view = EntityView.build(entity)
 
-        For aggregate ViewDTO[Aggregate[User, Profile]]:
-            >>> view = UserProfileView.build(user, profile)
+        For aggregate ViewDTO[Aggregate[DomainA, DomainB]]:
+            >>> view = CombinedView.build(entity_a, entity_b)
 
         For aggregate with duplicate domains (use named arguments):
-            >>> view = OrderView.build(buyer=buyer_user, seller=seller_user, product=product)
+            >>> view = RelationView.build(source=first_entity, target=second_entity, domainb=entity_b)
 
         Automatically maps Domain fields to DTO fields, using field mappings
         defined via Annotated[type, Domain.field] or Annotated[type, Domain("alias").field].
@@ -493,21 +484,21 @@ class BuildDTO[D](BaseModel, metaclass=DTOMeta):
         D: The Domain class this DTO will construct
 
     Usage:
-        >>> class User(Domain):
+        >>> class DomainA(Domain):
         ...     id: int
-        ...     username: str
-        ...     email: str
+        ...     name: str
+        ...     value: str
         >>>
-        >>> class CreateUser(BuildDTO[User]):
-        ...     username: str
-        ...     email: str
+        >>> class CreateEntity(BuildDTO[DomainA]):
+        ...     name: str
+        ...     value: str
         >>>
-        >>> dto = CreateUser(username="alice", email="alice@example.com")
-        >>> def generate_user(create_user: CreateUser) -> User:
-        ...     return User(**create_user.model_dump(), id=generate_id())
+        >>> dto = CreateEntity(name="example", value="data")
+        >>> def generate_entity(create_dto: CreateEntity) -> DomainA:
+        ...     return DomainA(**create_dto.model_dump(), id=generate_id())
         >>>
-        >>> user = generate_user(dto)
-        >>> print(user.username)  # "alice"
+        >>> entity = generate_entity(dto)
+        >>> print(entity.name)  # "example"
 
     Attributes:
         __field_mappings__: Dictionary mapping DTO field names to Domain field names

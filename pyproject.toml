@@ -1,5 +1,5 @@
 [project]
-name = "gto"
+name = "potato"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
@@ -10,10 +10,14 @@ dependencies = ["mypy[dmypy]>=1.18.2", "pydantic>=2.12.4"]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
+
 [tool.hatch.build.targets.wheel]
-packages = ["mypy_potato", "src"]
+packages = ["src/potato"]
 
 [tool.mypy]
-files = ["./src"]
-plugins = ["mypy_potato"]
+files = ["./src", "./tests"]
+plugins = ["potato.mypy"]
 mypy_path = "$MYPY_CONFIG_FILE_DIR"
+
+[dependency-groups]
+dev = ["pytest>=9.0.1", "pytest-cov>=6.0.0"]

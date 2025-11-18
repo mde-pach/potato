@@ -19,16 +19,19 @@ from typing import Callable
 
 from mypy.nodes import (
     AssignmentStmt,
+    CallExpr,
     ClassDef,
     Expression,
     IndexExpr,
     MemberExpr,
     NameExpr,
+    StrExpr,
+    SymbolTable,
     TypeInfo,
     Var,
 )
-from mypy.plugin import ClassDefContext
-from mypy.types import Type, UnboundType
+from mypy.plugin import ClassDefContext, DynamicClassDefContext, MethodContext
+from mypy.types import Type, TypeType, UnboundType
 from pydantic.mypy import MODEL_METACLASS_FULLNAME, PydanticPlugin
 
 
@@ -83,6 +86,106 @@ class PotatoPydanticPlugin(PydanticPlugin):
         if fullname == "domain.domain.Domain":
             return self._domain_class_hook
         return None
+
+    def get_method_hook(self, fullname: str) -> Callable[[MethodContext], Type] | None:
+        """
+        Register hooks for method calls.
+
+        Args:
+            fullname: Fully qualified name of the method
+
+        Returns:
+            Callback function for method call type inference, or None
+        """
+        # Hook into Domain.alias() method calls
+        if fullname.endswith(".alias"):
+            # Check if this is a Domain class method
+            parts = fullname.rsplit(".", 1)
+            if len(parts) == 2:
+                class_fullname = parts[0]
+                sym = self.lookup_fully_qualified(class_fullname)
+                if sym and isinstance(sym.node, TypeInfo):
+                    # Check multiple possible base names for Domain
+                    domain_bases = ["domain.domain.Domain", "src.domain.domain.Domain"]
+                    is_domain = any(sym.node.has_base(base) for base in domain_bases)
+                    if is_domain:
+                        return self._domain_alias_method_hook
+        return None
+
+    def get_dynamic_class_hook(
+        self, fullname: str
+    ) -> Callable[[DynamicClassDefContext], None] | None:
+        """
+        Register hooks for dynamic class creation (like User.alias()).
+
+        This allows us to tell mypy that User.alias("buyer") creates a valid type.
+        """
+        # This is called when mypy sees something that might create a class dynamically
+        # We want to handle Domain.alias() calls here
+        if ".alias" in fullname:
+            return self._domain_alias_dynamic_class_hook
+
+        return None
+
+    def _domain_alias_dynamic_class_hook(self, ctx: DynamicClassDefContext) -> None:
+        """
+        Handle Domain.alias() as a dynamic class creator.
+
+        This tells mypy that Buyer = User.alias("buyer") creates a valid type.
+        """
+        # Extract the Domain class from the call expression
+        # User.alias("buyer") -> call.callee is MemberExpr with expr=User, name="alias"
+        if isinstance(ctx.call.callee, MemberExpr):
+            domain_expr = ctx.call.callee.expr
+
+            if isinstance(domain_expr, NameExpr) and domain_expr.node:
+                if isinstance(domain_expr.node, TypeInfo):
+                    domain_type_info = domain_expr.node
+
+                    # Simply tell mypy that this variable holds the same type as the domain
+                    # This is the simplest approach - Buyer is just another name for User
+                    from mypy.nodes import GDEF, SymbolTableNode, TypeAlias
+                    from mypy.types import Instance
+
+                    # Create a type alias node
+                    # This makes Buyer behave like User for type checking purposes
+                    alias_node = TypeAlias(
+                        Instance(domain_type_info, []),
+                        ctx.api.qualified_name(ctx.name),
+                        line=ctx.call.line,
+                        column=ctx.call.column,
+                    )
+
+                    # Add it to the symbol table
+                    node = SymbolTableNode(GDEF, alias_node)
+                    ctx.api.add_symbol_table_node(ctx.name, node)
+
+    def _domain_alias_method_hook(self, ctx: MethodContext) -> Type:
+        """
+        Handle Domain.alias() method calls to return a proper type.
+
+        This makes Buyer = User.alias("buyer") return a type that mypy
+        recognizes as valid in generic parameters.
+        """
+        from mypy.types import CallableType, Instance
+
+        # When calling User.alias(), ctx.type is the callable type of User's constructor
+        # We need to extract the User type itself
+        if isinstance(ctx.type, CallableType):
+            # The return type of the constructor is the actual class instance
+            ret_type = ctx.type.ret_type
+            if isinstance(ret_type, Instance):
+                # Return type[Domain] so mypy sees it as a valid type
+                return TypeType(ret_type)
+
+        # Get the Domain class that alias() was called on
+        if isinstance(ctx.type, TypeType):
+            domain_type = ctx.type.item
+            # Return type[Domain] so mypy sees it as a valid type
+            return TypeType(domain_type)
+
+        # Fallback to the default return type
+        return ctx.default_return_type
 
     def _viewdto_class_hook(self, ctx: ClassDefContext) -> None:
         """Validate ViewDTO fields against Domain fields."""

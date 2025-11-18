@@ -22,10 +22,10 @@ class Aggregate[*D]:
         *D: Variable-length tuple of Domain types that compose this aggregate
 
     Usage:
-        >>> class Order(Domain[Aggregate[User, Price, Product]]):
-        ...     user: User
-        ...     price: Annotated[int, Price.amount]
-        ...     product: Product
+        >>> class DomainC(Domain[Aggregate[DomainA, DomainB]]):
+        ...     entity_a: DomainA
+        ...     description: Annotated[str, DomainB.description]
+        ...     entity_b: DomainB
 
     The Aggregate declaration:
     1. Documents the domain dependencies explicitly

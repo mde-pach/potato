@@ -47,17 +47,17 @@ class FieldProxy:
         alias: Optional alias to distinguish multiple instances of same domain
 
     Example:
-        >>> class User(Domain):
-        ...     username: str
+        >>> class DomainA(Domain):
+        ...     name: str
         >>>
         >>> # Single instance
-        >>> class UserDTO(ViewDTO[User]):
-        ...     login: Annotated[str, User.username]  # Maps login -> username
+        >>> class EntityDTO(ViewDTO[DomainA]):
+        ...     display_name: Annotated[str, DomainA.name]  # Maps display_name -> name
         >>>
         >>> # Multiple instances
-        >>> class OrderView(ViewDTO[Aggregate[User, User, Product]]):
-        ...     buyer_name: Annotated[str, User("buyer").username]
-        ...     seller_name: Annotated[str, User("seller").username]
+        >>> class RelationView(ViewDTO[Aggregate[DomainA, DomainA, DomainB]]):
+        ...     source_name: Annotated[str, DomainA("source").name]
+        ...     target_name: Annotated[str, DomainA("target").name]
     """
 
     def __init__(self, model_cls: type, field_name: str, alias: str | None = None):
@@ -78,17 +78,17 @@ class AliasedDomainProxy:
     When you call Domain("alias"), it returns this proxy which creates
     FieldProxy instances with the alias attached.
 
-    This enables syntax like: User("buyer").username
-    which returns: FieldProxy(User, "username", alias="buyer")
+    This enables syntax like: DomainA("source").name
+    which returns: FieldProxy(DomainA, "name", alias="source")
 
     Attributes:
         domain_cls: The Domain class being aliased
         alias: The alias name for this instance
 
     Example:
-        >>> buyer_proxy = User("buyer")
-        >>> buyer_username = buyer_proxy.username
-        >>> print(buyer_username)  # FieldProxy(User("buyer").username)
+        >>> source_proxy = DomainA("source")
+        >>> source_name = source_proxy.name
+        >>> print(source_name)  # FieldProxy(DomainA("source").name)
     """
 
     def __init__(self, domain_cls: type, alias: str):
@@ -113,13 +113,13 @@ class AnnotatedTypeProxy:
     """
     Runtime proxy for Annotated type aliases to enable attribute access.
 
-    When you have: Buyer = Annotated[User, "buyer"]
-    This proxy allows: Buyer.id to work at runtime.
+    When you have: Source = Annotated[DomainA, "source"]
+    This proxy allows: Source.id to work at runtime.
 
     Usage:
-        >>> Buyer = Annotated[User, "buyer"]
-        >>> buyer_id = get_aliased_proxy(Buyer).id
-        >>> # buyer_id is FieldProxy(User, "id", alias="buyer")
+        >>> Source = Annotated[DomainA, "source"]
+        >>> source_id = get_aliased_proxy(Source).id
+        >>> # source_id is FieldProxy(DomainA, "id", alias="source")
     """
 
     def __init__(self, annotated_type: Any):
@@ -162,59 +162,92 @@ def get_aliased_proxy(annotated_type: Any) -> AnnotatedTypeProxy:
     Get a proxy object for an Annotated type alias that enables attribute access.
 
     Usage:
-        >>> Buyer = Annotated[User, "buyer"]
-        >>> BuyerProxy = get_aliased_proxy(Buyer)
-        >>> buyer_id = BuyerProxy.id  # Returns FieldProxy(User, "id", alias="buyer")
+        >>> Source = Annotated[DomainA, "source"]
+        >>> SourceProxy = get_aliased_proxy(Source)
+        >>> source_id = SourceProxy.id  # Returns FieldProxy(DomainA, "id", alias="source")
     """
     return AnnotatedTypeProxy(annotated_type)
 
 
-class AliasedType:
+class AliasedTypeMeta(type):
+    """
+    Metaclass for AliasedType that makes instances behave like types.
+
+    This metaclass allows AliasedType instances to be used in generic type
+    parameters while still supporting attribute access for field references.
+    """
+
+    def __call__(cls, domain_cls: type, alias: str):
+        """
+        Create a new type that represents the aliased domain.
+
+        Instead of returning an instance of AliasedType, we create a new
+        type dynamically that mypy will recognize as valid in generics.
+        """
+        # Create a new type dynamically
+        # The type name includes the alias for clarity
+        type_name = f"{domain_cls.__name__}_{alias}"
+
+        # Get the metaclass of the domain class
+        domain_metaclass = type(domain_cls)
+
+        # Create a custom metaclass that provides __getattr__ for the TYPE itself
+        # This allows Buyer.id to work (accessing attribute on the class, not instance)
+        # It must inherit from the domain's metaclass to avoid metaclass conflicts
+        class AliasedDomainMeta(domain_metaclass):  # type: ignore
+            """Metaclass for the dynamically created aliased type."""
+
+            def __getattr__(cls, field_name: str) -> FieldProxy:
+                """Return a FieldProxy with the alias attached when accessing class attributes."""
+                annotations = getattr(domain_cls, "__annotations__", {})
+                if field_name not in annotations:
+                    raise AttributeError(
+                        f"Domain '{domain_cls.__name__}' has no field '{field_name}'"
+                    )
+                return FieldProxy(domain_cls, field_name, alias=alias)
+
+            def __repr__(cls):
+                return f"AliasedType({domain_cls.__name__}, alias={alias!r})"
+
+        # Create the new type with the custom metaclass
+        new_type = AliasedDomainMeta(
+            type_name,
+            (domain_cls,),  # Inherit from the domain class
+            {
+                "_domain_cls": domain_cls,
+                "_alias": alias,
+                "__module__": domain_cls.__module__,
+            },
+        )
+
+        return new_type
+
+
+class AliasedType(metaclass=AliasedTypeMeta):
     """
     Helper class to create type aliases that support attribute access.
 
-    This allows you to use: Buyer.id where Buyer = AliasedType(User, "buyer")
-    And also use Buyer in type annotations: Aggregate[Buyer, Seller, Product]
+    This allows you to use: Source.id where Source = AliasedType(DomainA, "source")
+    And also use Source in type annotations: Aggregate[Source, Target, DomainB]
 
     Usage:
-        >>> Buyer = AliasedType(User, "buyer")
-        >>> buyer_id = Buyer.id  # Returns FieldProxy(User, "id", alias="buyer")
-        >>> # Buyer can be used in Aggregate[Buyer, ...] - it will be treated as Annotated[User, "buyer"]
+        >>> Source = AliasedType(DomainA, "source")
+        >>> source_id = Source.id  # Returns FieldProxy(DomainA, "id", alias="source")
+        >>> # Source can be used in Aggregate[Source, ...] - mypy accepts it as a type
+
+    Note: AliasedType(domain, alias) returns a new type, not an instance.
+    This is achieved through the metaclass __call__ method.
     """
 
-    def __init__(self, domain_cls: type, alias: str):
-        self._domain_cls = domain_cls
-        self._alias = alias
-        # Create the Annotated type for use in type annotations
-        self._annotated_type = Annotated[domain_cls, alias]  # type: ignore
+    # This class body is mostly for documentation
+    # The actual behavior is defined in AliasedTypeMeta.__call__
 
-    def __getattr__(self, field_name: str) -> FieldProxy:
-        """Return a FieldProxy with the alias attached."""
-        annotations = getattr(self._domain_cls, "__annotations__", {})
-        if field_name not in annotations:
-            raise AttributeError(
-                f"Domain '{self._domain_cls.__name__}' has no field '{field_name}'"
-            )
-        return FieldProxy(self._domain_cls, field_name, alias=self._alias)
+    if TYPE_CHECKING:
+        # For IDE completion: tell type checkers that any attribute access returns FieldProxy
+        # This is a lie for type checking, but it helps IDEs provide completion
+        def __getattr__(self, name: str) -> FieldProxy: ...
 
-    def __repr__(self):
-        return f"AliasedType({self._domain_cls.__name__}, alias={self._alias!r})"
-
-    # Make instances work with get_origin/get_args for type checking
-    def __class_getitem__(cls, item):
-        # This allows AliasedType[User, "buyer"] syntax if needed
-        return Annotated[item[0], item[1]]  # type: ignore
-
-    # Make the instance itself work as a type annotation
-    # When used in Aggregate[AliasedType(...), ...], extract the underlying Annotated type
-    @property
-    def __origin__(self):
-        """Make it work with get_origin() for type checking."""
-        return Annotated
-
-    def __args__(self):
-        """Make it work with get_args() for type checking."""
-        return (self._domain_cls, self._alias)
+    pass
 
 
 @dataclass_transform(
@@ -314,35 +347,9 @@ class DomainMeta(ModelMetaclass):
 
     if not TYPE_CHECKING:
 
-        def __call__(cls, *args: Any, **kwargs: Any) -> AliasedDomainProxy | Self:
-            """
-            Handle Domain instantiation and aliasing.
-
-            - Domain() or Domain(field=value) -> Create instance
-            - Domain("alias") -> Return AliasedDomainProxy for field references
-
-            Args:
-                *args: Positional arguments for instantiation or alias
-                **kwargs: Keyword arguments for instantiation
-
-            Returns:
-                AliasedDomainProxy if called with single string, else Domain instance
-
-            Example:
-                >>> user = User(id=1, username="alice")  # Instance
-                >>> buyer_proxy = User("buyer")  # AliasedDomainProxy
-                >>> buyer_id = User("buyer").id  # FieldProxy with alias
-            """
-            # If called with a single string argument, return aliased proxy
-            if len(args) == 1 and isinstance(args[0], str) and not kwargs:
-                return AliasedDomainProxy(cls, args[0])
-
-            # Otherwise, normal instantiation
-            return super(DomainMeta, cls).__call__(*args, **kwargs)
-
         def __getattr__(cls, name: str):
             """
-            Enable field access as class attributes (e.g., User.username).
+            Enable field access as class attributes (e.g., DomainA.name).
 
             When accessing a field on a Domain class (not instance), return a
             FieldProxy that can be used in Annotated type hints for field mappings.
@@ -354,7 +361,7 @@ class DomainMeta(ModelMetaclass):
                 FieldProxy for annotated fields, or delegates to parent for others
 
             Example:
-                >>> User.username  # Returns FieldProxy(User, "username")
+                >>> DomainA.name  # Returns FieldProxy(DomainA, "name")
             """
             if cls.__name__ == "Domain":
                 return super().__getattr__(name)
@@ -396,28 +403,28 @@ class Domain[T: A | None = None](BaseModel, metaclass=DomainMeta):
     Base class for all domain models with optional aggregate support.
 
     Domain extends Pydantic's BaseModel with additional features:
-    1. Field access as class attributes (e.g., User.username)
+    1. Field access as class attributes (e.g., DomainA.name)
     2. Aggregate support via Domain[Aggregate[Type1, Type2, ...]]
-    3. Aliasing via User.alias("buyer") for multiple instances
+    3. Aliasing via DomainA.alias("first") for multiple instances
     4. Compile-time validation of field mappings and aggregate declarations
 
     Basic Usage:
-        >>> class User(Domain):
+        >>> class DomainA(Domain):
         ...     id: int
-        ...     username: str
-        ...     email: str
+        ...     name: str
+        ...     value: str
 
     Aggregate Usage:
-        >>> class Order(Domain[Aggregate[User, Price]]):
-        ...     user: User
-        ...     price: Annotated[int, Price.amount]
+        >>> class DomainC(Domain[Aggregate[DomainA, DomainB]]):
+        ...     entity_a: DomainA
+        ...     description: Annotated[str, DomainB.description]
 
     Aliasing Usage:
-        >>> Buyer = User.alias("buyer")
-        >>> Seller = User.alias("seller")
-        >>> class OrderView(ViewDTO[Aggregate[Buyer, Seller, Product]]):
-        ...     buyer_id: Annotated[int, Buyer.id]
-        ...     seller_id: Annotated[int, Seller.id]
+        >>> Source = DomainA.alias("source")
+        >>> Target = DomainA.alias("target")
+        >>> class RelationView(ViewDTO[Aggregate[Source, Target, DomainB]]):
+        ...     source_id: Annotated[int, Source.id]
+        ...     target_id: Annotated[int, Target.id]
 
     Attributes:
         __aggregate_domain_types__: Tuple of Domain types in the aggregate
@@ -428,5 +435,24 @@ class Domain[T: A | None = None](BaseModel, metaclass=DomainMeta):
     __aggregate_field_mappings__: ClassVar[dict[str, tuple[type, str, str | None]]] = {}
 
     @classmethod
-    def alias(cls: type[Self], alias_name: str) -> Any:
-        pass
+    def alias(cls: type[Self], alias_name: str) -> type[Self]:
+        """
+        Create an aliased type reference for this domain.
+
+        This enables using multiple instances of the same domain type in aggregates.
+
+        Args:
+            alias_name: The alias to use for this instance
+
+        Returns:
+            A type that behaves like the original Domain class but with alias metadata.
+            Supports field access (e.g., Source.id) and can be used in Aggregate declarations.
+
+        Example:
+            >>> Source = DomainA.alias("source")
+            >>> Target = DomainA.alias("target")
+            >>> class RelationView(ViewDTO[Aggregate[Source, Target, DomainB]]):
+            ...     source_id: Annotated[int, Source.id]
+            ...     target_id: Annotated[int, Target.id]
+        """
+        return AliasedType(cls, alias_name)  # type: ignore[return-value, call-arg]
