@@ -116,7 +116,7 @@ Compose multiple domains into aggregates:
 from potato.domain.aggregates import Aggregate
 from typing import Annotated
 
-class Order(Domain[Aggregate[User, Product, Price]]):
+class Order(Aggregate[User, Product, Price]):
     customer: User
     product: Product
     price_amount: Annotated[int, Price.amount]

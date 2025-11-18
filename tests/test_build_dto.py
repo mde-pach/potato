@@ -95,7 +95,7 @@ class TestBuildDTOValidation:
 
     def test_invalid_type_raises_error(self):
         """Test that invalid types raise ValidationError."""
-        with pytest.raises(ValidationError) as exc_info:
+        with pytest.raises(ValidationError):
             UserBuildDTO(username=123, email="test@example.com")
 
         # Might coerce or raise error depending on pydantic settings

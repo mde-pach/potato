@@ -155,7 +155,7 @@ class Product(Domain):
     name: str
     price: int
 
-class Order(Domain[Aggregate[User, Product]]):
+class Order(Aggregate[User, Product]):
     customer: User
     product: Product
     quantity: int

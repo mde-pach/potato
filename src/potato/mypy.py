@@ -4,6 +4,7 @@ Potato Mypy Plugin - Type-safe Domain and DTO patterns with compile-time validat
 This plugin extends Pydantic's mypy plugin to provide static type checking for:
 1. ViewDTO field mappings - ensures all required Domain fields are present in DTOs
 2. Domain aggregate declarations - validates that referenced Domain types are declared
+3. Aggregate classes - validates that all Domain fields are declared in Aggregate generics
 
 The plugin enforces type safety and consistency in the unidirectional data flow
 pattern between Domains and DTOs, catching configuration errors at compile-time
@@ -19,14 +20,11 @@ from typing import Callable
 
 from mypy.nodes import (
     AssignmentStmt,
-    CallExpr,
     ClassDef,
     Expression,
     IndexExpr,
     MemberExpr,
     NameExpr,
-    StrExpr,
-    SymbolTable,
     TypeInfo,
     Var,
 )
@@ -42,6 +40,7 @@ class PotatoPydanticPlugin(PydanticPlugin):
     Extends Pydantic's mypy plugin with additional validation hooks for:
     - ViewDTO classes to ensure they properly map Domain fields
     - Domain classes to validate Aggregate type declarations
+    - Aggregate classes to validate that all Domain fields are declared in generics
     """
 
     def get_metaclass_hook(
@@ -71,7 +70,7 @@ class PotatoPydanticPlugin(PydanticPlugin):
         self, fullname: str
     ) -> Callable[[ClassDefContext], None] | None:
         """
-        Register hooks for custom base classes (ViewDTO and Domain).
+        Register hooks for custom base classes (ViewDTO, Domain, and Aggregate).
 
         Args:
             fullname: Fully qualified name of the base class
@@ -85,6 +84,9 @@ class PotatoPydanticPlugin(PydanticPlugin):
         # Check if this is a Domain subclass
         if fullname == "domain.domain.Domain":
             return self._domain_class_hook
+        # Check if this is an Aggregate subclass
+        if fullname == "domain.aggregates.Aggregate":
+            return self._aggregate_class_hook
         return None
 
     def get_method_hook(self, fullname: str) -> Callable[[MethodContext], Type] | None:
@@ -415,7 +417,7 @@ class PotatoPydanticPlugin(PydanticPlugin):
         """Validate Domain fields when using Aggregates."""
         cls_def: ClassDef = ctx.cls
 
-        # Extract the Aggregate types from Domain[Aggregate[...]]
+        # Extract the Aggregate types from Aggregate[...]
         aggregate_types = self._extract_aggregate_types(ctx)
         if aggregate_types is None:
             # No Aggregate used, nothing to validate
@@ -430,13 +432,13 @@ class PotatoPydanticPlugin(PydanticPlugin):
                 ctx.api.fail(
                     f'Field "{field_name}" references Domain type "{domain_type_name}" '
                     f"which is not declared in the Aggregate generic. "
-                    f'Add "{domain_type_name}" to Domain[Aggregate[...]] or remove the reference.',
+                    f'Add "{domain_type_name}" to Aggregate[...] declaration or remove the reference.',
                     ctx.cls,
                 )
 
     def _extract_aggregate_types(self, ctx: ClassDefContext) -> set[str] | None:
         """
-        Extract the Domain types from Domain[Aggregate[Type1, Type2, ...]] generic parameter.
+        Extract the Domain types from Aggregate[Type1, Type2, ...] generic parameter.
 
         Returns:
             A set of type names if Aggregate is used, None otherwise.
@@ -566,6 +568,131 @@ class PotatoPydanticPlugin(PydanticPlugin):
             domain_fullname = "domain.domain.Domain"
             return sym.node.has_base(domain_fullname)
         return False
+
+    def _aggregate_class_hook(self, ctx: ClassDefContext) -> None:
+        """Validate Aggregate fields against declared domain types."""
+        cls_def: ClassDef = ctx.cls
+
+        # Extract the Aggregate types from Aggregate[Type1, Type2, ...]
+        aggregate_types = self._extract_aggregate_types_from_aggregate(ctx)
+        if aggregate_types is None:
+            # No generic parameters, nothing to validate
+            return
+
+        # Get all Domain types referenced in fields
+        referenced_domain_types = self._get_referenced_domain_types(ctx, cls_def)
+
+        # Also get direct Domain field references (fields typed as Domain classes)
+        direct_domain_fields = self._get_direct_domain_fields(ctx, cls_def)
+
+        # Validate that all referenced Domain types are in the Aggregate
+        for field_name, domain_type_name in referenced_domain_types:
+            if domain_type_name not in aggregate_types:
+                ctx.api.fail(
+                    f'Field "{field_name}" references Domain type "{domain_type_name}" '
+                    f"which is not declared in the Aggregate generic. "
+                    f'Add "{domain_type_name}" to Aggregate[...] declaration or remove the reference.',
+                    ctx.cls,
+                )
+
+        # Validate direct domain fields
+        for field_name, domain_type_name in direct_domain_fields:
+            if domain_type_name not in aggregate_types:
+                ctx.api.fail(
+                    f'Field "{field_name}" has type "{domain_type_name}" '
+                    f"which is not declared in the Aggregate generic. "
+                    f'Add "{domain_type_name}" to Aggregate[...] declaration.',
+                    ctx.cls,
+                )
+
+    def _extract_aggregate_types_from_aggregate(
+        self, ctx: ClassDefContext
+    ) -> set[str] | None:
+        """
+        Extract the Domain types from Aggregate[Type1, Type2, ...] when inheriting from Aggregate.
+
+        Returns:
+            A set of type names if Aggregate is used, None otherwise.
+        """
+        for base_expr in ctx.cls.base_type_exprs:
+            if isinstance(base_expr, IndexExpr):
+                base = base_expr.base
+                # Check if the base is Aggregate
+                if isinstance(base, NameExpr) and base.name == "Aggregate":
+                    # Get the index (the types)
+                    index = base_expr.index
+                    aggregate_types = set()
+
+                    # Handle tuple of types
+                    from mypy.nodes import TupleExpr
+
+                    if isinstance(index, TupleExpr):
+                        for item in index.items:
+                            if isinstance(item, NameExpr):
+                                aggregate_types.add(item.name)
+                    # Handle single type
+                    elif isinstance(index, NameExpr):
+                        aggregate_types.add(index.name)
+
+                    return aggregate_types
+        return None
+
+    def _get_direct_domain_fields(
+        self, ctx: ClassDefContext, cls_def: ClassDef
+    ) -> list[tuple[str, str]]:
+        """
+        Get all fields that are directly typed as Domain classes.
+
+        Returns:
+            A list of (field_name, domain_type_name) tuples.
+        """
+        direct_fields: list[tuple[str, str]] = []
+
+        # Iterate through field assignments
+        for stmt in cls_def.defs.body:
+            if isinstance(stmt, AssignmentStmt):
+                for lvalue in stmt.lvalues:
+                    if isinstance(lvalue, NameExpr):
+                        field_name = lvalue.name
+                        # Check the type annotation
+                        type_to_check = (
+                            stmt.unanalyzed_type
+                            if stmt.unanalyzed_type is not None
+                            else stmt.type
+                        )
+                        if type_to_check is not None:
+                            domain_type = self._extract_direct_domain_type(
+                                type_to_check, ctx
+                            )
+                            if domain_type:
+                                direct_fields.append((field_name, domain_type))
+
+        return direct_fields
+
+    def _extract_direct_domain_type(
+        self, type_expr: Expression | Type, ctx: ClassDefContext
+    ) -> str | None:
+        """
+        Extract Domain type from a direct type annotation (not Annotated).
+
+        Returns the Domain type name if it's a Domain class, None otherwise.
+        """
+        # Handle NameExpr (simple type like User)
+        if isinstance(type_expr, NameExpr):
+            type_name = type_expr.name
+            if self._is_domain_class(type_name, ctx):
+                return type_name
+
+        # Handle UnboundType (unanalyzed types)
+        if isinstance(type_expr, UnboundType):
+            # Skip Annotated types - those are handled separately
+            if type_expr.name == "Annotated":
+                return None
+            # Check if this is a Domain class
+            if self._is_domain_class(type_expr.name, ctx):
+                return type_expr.name
+
+        return None
 
 
 def plugin(version: str):

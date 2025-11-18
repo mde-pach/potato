@@ -127,7 +127,7 @@ class Price(Domain):
     amount: int
     currency: str
 
-class Order(Domain[Aggregate[User, Product, Price]]):
+class Order(Aggregate[User, Product, Price]):
     customer: User
     product: Product
     price_amount: Annotated[int, Price.amount]
@@ -332,7 +332,7 @@ class User(Domain):
     username: str
     email: str
 
-class Post(Domain[Aggregate[User]]):
+class Post(Aggregate[User]):
     id: int
     title: str
     content: str
@@ -340,7 +340,7 @@ class Post(Domain[Aggregate[User]]):
     published: bool = False
     created_at: str
 
-class Comment(Domain[Aggregate[User, Post]]):
+class Comment(Aggregate[User, Post]):
     id: int
     content: str
     author: User

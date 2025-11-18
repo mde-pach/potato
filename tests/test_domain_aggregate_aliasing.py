@@ -17,7 +17,7 @@ from .conftest import Buyer, Product, Seller
 # =============================================================================
 
 
-class Transaction(Domain[Aggregate[Buyer, Seller, Product]]):
+class Transaction(Aggregate[Buyer, Seller, Product]):
     """A Domain aggregate with multiple instances of the same domain type."""
 
     buyer_id: Annotated[int, Buyer.id]
@@ -30,7 +30,7 @@ class Transaction(Domain[Aggregate[Buyer, Seller, Product]]):
     transaction_amount: int
 
 
-class SimpleTransaction(Domain[Aggregate[Buyer, Seller]]):
+class SimpleTransaction(Aggregate[Buyer, Seller]):
     """Simple transaction with just buyer and seller."""
 
     buyer_id: Annotated[int, Buyer.id]
@@ -38,7 +38,7 @@ class SimpleTransaction(Domain[Aggregate[Buyer, Seller]]):
     amount: int
 
 
-class DetailedTransaction(Domain[Aggregate[Buyer, Seller, Product]]):
+class DetailedTransaction(Aggregate[Buyer, Seller, Product]):
     """Detailed transaction with more fields."""
 
     buyer_id: Annotated[int, Buyer.id]

@@ -224,7 +224,7 @@ class TestBuildDTOEdgeCases:
 # =============================================================================
 
 
-class MinimalAggregate(Domain[Aggregate[User]]):
+class MinimalAggregate(Aggregate[User]):
     """Aggregate with just one domain."""
 
     user: User
@@ -243,7 +243,7 @@ class TestAggregateEdgeCases:
     ):
         """Test aggregate where nested domain has None values."""
 
-        class AggregateWithOptional(Domain[Aggregate[User, Product]]):
+        class AggregateWithOptional(Aggregate[User, Product]):
             user: User
             product: Product
 
@@ -258,7 +258,7 @@ class TestAggregateEdgeCases:
     ):
         """Test aggregate with multiple instances of same domain type."""
 
-        class MultiUserAggregate(Domain[Aggregate[Buyer, Seller, Product]]):
+        class MultiUserAggregate(Aggregate[Buyer, Seller, Product]):
             buyer: Annotated[str, Buyer.username]
             seller: Annotated[str, Seller.username]
             product: Product
@@ -308,7 +308,7 @@ class TestErrorHandling:
     def test_aggregate_with_mismatched_types(self, simple_user):
         """Test aggregate with mismatched field types."""
 
-        class TypedAggregate(Domain[Aggregate[User, Product]]):
+        class TypedAggregate(Aggregate[User, Product]):
             user: User
             product: Product
 

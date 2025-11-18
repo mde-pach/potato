@@ -13,7 +13,7 @@ Aggregates help you:
 
 ## Basic Aggregates
 
-Create an aggregate by declaring `Domain[Aggregate[Domain1, Domain2, ...]]`:
+Create an aggregate by inheriting from `Aggregate[Domain1, Domain2, ...]`:
 
 ```python
 from potato.domain import Domain
@@ -29,13 +29,13 @@ class Product(Domain):
     name: str
     price: int
 
-class Order(Domain[Aggregate[User, Product]]):
+class Order(Aggregate[User, Product]):
     customer: User
     product: Product
     quantity: int
 ```
 
-The `Aggregate[User, Product]` declaration tells Potato that `Order` is composed of `User` and `Product` domains.
+The `Aggregate[User, Product]` declaration makes `Order` an aggregate that encapsulates `User` and `Product` domains. This is more aligned with Domain-Driven Design principles where an Aggregate IS a special kind of Domain.
 
 ## Creating Aggregates
 
@@ -61,7 +61,7 @@ class Price(Domain):
     amount: int
     currency: str
 
-class Order(Domain[Aggregate[User, Price, Product]]):
+class Order(Aggregate[User, Price, Product]):
     customer: User
     price_amount: Annotated[int, Price.amount]  # Extract amount field
     price_currency: Annotated[str, Price.currency]  # Extract currency field
@@ -89,7 +89,7 @@ Field extraction is useful when:
 You can mix full domain instances with extracted fields:
 
 ```python
-class Order(Domain[Aggregate[User, Price, Product]]):
+class Order(Aggregate[User, Price, Product]):
     customer: User  # Full domain instance
     price_amount: Annotated[int, Price.amount]  # Extracted field
     product: Product  # Full domain instance
@@ -140,7 +140,7 @@ The order of arguments must match the order in `Aggregate[User, Product]`.
 Aggregates can include multiple instances of different domain types:
 
 ```python
-class Order(Domain[Aggregate[User, User, Product, Price]]):
+class Order(Aggregate[User, User, Product, Price]):
     customer: User  # First User instance
     seller: User   # Second User instance
     product: Product
@@ -164,13 +164,13 @@ Aggregates should represent a cohesive business concept:
 
 ```python
 # ✅ Good: Order is a cohesive concept
-class Order(Domain[Aggregate[User, Product, Price]]):
+class Order(Aggregate[User, Product, Price]):
     customer: User
     product: Product
     total: Annotated[int, Price.amount]
 
 # ❌ Bad: Unrelated domains mixed together
-class RandomAggregate(Domain[Aggregate[User, Product, BlogPost, Comment]]):
+class RandomAggregate(Aggregate[User, Product, BlogPost, Comment]):
     # Too many unrelated concepts
 ```
 
@@ -180,11 +180,11 @@ Extract fields only when there's a clear benefit:
 
 ```python
 # ✅ Good: Extract price for snapshot
-class Order(Domain[Aggregate[Price]]):
+class Order(Aggregate[Price]):
     price_amount: Annotated[int, Price.amount]  # Snapshot of price at order time
 
 # ❌ Bad: Extract everything
-class Order(Domain[Aggregate[User]]):
+class Order(Aggregate[User]):
     user_id: Annotated[int, User.id]
     username: Annotated[str, User.username]
     email: Annotated[str, User.email]
@@ -196,7 +196,7 @@ class Order(Domain[Aggregate[User]]):
 Make it clear why domains are grouped together:
 
 ```python
-class Order(Domain[Aggregate[User, Product, Price]]):
+class Order(Aggregate[User, Product, Price]):
     """
     Order aggregate representing a purchase transaction.
     
@@ -215,7 +215,7 @@ class Order(Domain[Aggregate[User, Product, Price]]):
 ### E-commerce Order
 
 ```python
-class Order(Domain[Aggregate[User, Product, Price]]):
+class Order(Aggregate[User, Product, Price]):
     customer: User
     product: Product
     price_amount: Annotated[int, Price.amount]
@@ -227,7 +227,7 @@ class Order(Domain[Aggregate[User, Product, Price]]):
 ### Transaction with Multiple Parties
 
 ```python
-class Transaction(Domain[Aggregate[User, User, Product]]):
+class Transaction(Aggregate[User, User, Product]):
     buyer: User
     seller: User
     product: Product

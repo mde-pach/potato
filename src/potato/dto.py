@@ -86,33 +86,44 @@ class ViewDTOMeta(DTOMeta):
                 metadata = base.__pydantic_generic_metadata__
                 if "args" in metadata and metadata["args"]:
                     first_arg = metadata["args"][0]
-                    aggregate_origin = get_origin(first_arg)
-                    if aggregate_origin is not None:
+
+                    # Check if first_arg is an Aggregate instance (new pattern)
+                    # With the new pattern, Aggregate[User, Product] returns a class that
+                    # has __aggregate_domain_types__ attribute set by AggregateMeta
+                    if hasattr(first_arg, "__aggregate_domain_types__"):
+                        aggregate_args = first_arg.__aggregate_domain_types__
+                    else:
+                        # Old pattern: check if it's a generic alias like Aggregate[...]
+                        aggregate_origin = get_origin(first_arg)
+                        if aggregate_origin is not None:
+                            aggregate_args = get_args(first_arg)
+                        else:
+                            aggregate_args = None
+
+                    if aggregate_args:
                         # Get the domain types from Aggregate[User, Profile, ...] or aliased types
                         # created via Domain.alias() like Aggregate[Buyer, Seller, ...]
                         # where Buyer = User.alias("buyer")
-                        aggregate_args = get_args(first_arg)
-                        if aggregate_args:
-                            for domain_spec in aggregate_args:
-                                # Check if it's an AliasedType (created via Domain.alias())
-                                # AliasedType returns a type/class, not an instance, so we check for attributes
-                                if hasattr(domain_spec, "_domain_cls") and hasattr(
-                                    domain_spec, "_alias"
-                                ):
-                                    domain_type = domain_spec._domain_cls
-                                    alias = domain_spec._alias
-                                else:
-                                    # Plain domain, no alias
-                                    domain_type = domain_spec
-                                    alias = None
+                        for domain_spec in aggregate_args:
+                            # Check if it's an AliasedType (created via Domain.alias())
+                            # AliasedType returns a type/class, not an instance, so we check for attributes
+                            if hasattr(domain_spec, "_domain_cls") and hasattr(
+                                domain_spec, "_alias"
+                            ):
+                                domain_type = domain_spec._domain_cls
+                                alias = domain_spec._alias
+                            else:
+                                # Plain domain, no alias
+                                domain_type = domain_spec
+                                alias = None
 
-                                aggregate_domain_types.append(domain_type)
+                            aggregate_domain_types.append(domain_type)
 
-                                # Track aliases for each domain type
-                                if domain_type not in domain_aliases:
-                                    domain_aliases[domain_type] = []
-                                domain_aliases[domain_type].append(alias)
-                            break
+                            # Track aliases for each domain type
+                            if domain_type not in domain_aliases:
+                                domain_aliases[domain_type] = []
+                            domain_aliases[domain_type].append(alias)
+                        break
 
         if aggregate_domain_types:
             cls.__aggregate_domain_types__ = tuple(aggregate_domain_types)  # type: ignore

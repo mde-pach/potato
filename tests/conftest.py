@@ -6,8 +6,7 @@ from typing import Annotated
 
 import pytest
 
-from potato.domain import Domain
-from potato.domain.aggregates import Aggregate
+from potato.domain import Aggregate, Domain
 
 # =============================================================================
 # Domain Fixtures
@@ -39,7 +38,7 @@ class Product(Domain):
     description: str
 
 
-class Order(Domain[Aggregate[User, Price, Product]]):
+class Order(Aggregate[User, Price, Product]):
     """An aggregate domain composed of multiple other domains."""
 
     customer: User
@@ -111,19 +110,19 @@ def seller_user():
 
 
 @pytest.fixture
-def simple_product():
+def simple_product() -> Product:
     """A basic product."""
     return Product(id=1, name="Widget", description="A useful widget")
 
 
 @pytest.fixture
-def laptop_product():
+def laptop_product() -> Product:
     """A laptop product."""
     return Product(id=100, name="Laptop", description="High-performance laptop")
 
 
 @pytest.fixture
-def smartphone_product():
+def smartphone_product() -> Product:
     """A smartphone product."""
     return Product(id=200, name="Smartphone", description="Latest model")
 
@@ -134,19 +133,19 @@ def smartphone_product():
 
 
 @pytest.fixture
-def usd_price():
+def usd_price() -> Price:
     """A price in USD."""
     return Price(amount=100, currency="USD")
 
 
 @pytest.fixture
-def eur_price():
+def eur_price() -> Price:
     """A price in EUR."""
     return Price(amount=85, currency="EUR")
 
 
 @pytest.fixture
-def high_price():
+def high_price() -> Price:
     """A high-value price."""
     return Price(amount=1500, currency="USD")
 
@@ -157,7 +156,9 @@ def high_price():
 
 
 @pytest.fixture
-def simple_order(simple_user, seller_user, usd_price, simple_product):
+def simple_order(
+    simple_user: User, seller_user: User, usd_price: Price, simple_product: Product
+) -> Order:
     """A basic order with minimal fields."""
     return Order(
         customer=simple_user,
@@ -168,7 +169,9 @@ def simple_order(simple_user, seller_user, usd_price, simple_product):
 
 
 @pytest.fixture
-def laptop_order(buyer_user, seller_user, high_price, laptop_product):
+def laptop_order(
+    buyer_user: User, seller_user: User, high_price: Price, laptop_product: Product
+) -> Order:
     """An order for a laptop."""
     return Order(
         customer=buyer_user,

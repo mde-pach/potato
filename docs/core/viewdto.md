@@ -190,7 +190,7 @@ def get_user(user_id: int) -> UserView:
 You can create views that include nested domain models:
 
 ```python
-class Order(Domain[Aggregate[User, Product]]):
+class Order(Aggregate[User, Product]):
     customer: User
     product: Product
 

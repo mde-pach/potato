@@ -8,7 +8,7 @@ Consider an e-commerce transaction: you have a buyer and a seller, both of which
 
 ```python
 # ❌ This doesn't work - can't have two User types
-class Transaction(Domain[Aggregate[User, User, Product]]):
+class Transaction(Aggregate[User, User, Product]):
     # Which User is which?
 ```
 
@@ -19,7 +19,7 @@ With aliasing, you can create distinct types:
 Buyer = User.alias("buyer")
 Seller = User.alias("seller")
 
-class Transaction(Domain[Aggregate[Buyer, Seller, Product]]):
+class Transaction(Aggregate[Buyer, Seller, Product]):
     buyer_id: Annotated[int, Buyer.id]
     seller_id: Annotated[int, Seller.id]
     product: Product
@@ -50,7 +50,7 @@ Aliases are types that behave like the original domain but with distinct identit
 Use aliases in aggregate declarations:
 
 ```python
-class Transaction(Domain[Aggregate[Buyer, Seller, Product]]):
+class Transaction(Aggregate[Buyer, Seller, Product]):
     buyer_id: Annotated[int, Buyer.id]
     buyer_name: Annotated[str, Buyer.username]
     seller_id: Annotated[int, Seller.id]
@@ -181,7 +181,7 @@ Buyer = User.alias("buyer")
 Seller = User.alias("seller")
 
 # Aggregate with aliased domains
-class Transaction(Domain[Aggregate[Buyer, Seller, Product]]):
+class Transaction(Aggregate[Buyer, Seller, Product]):
     buyer_id: Annotated[int, Buyer.id]
     buyer_name: Annotated[str, Buyer.username]
     seller_id: Annotated[int, Seller.id]
@@ -241,7 +241,7 @@ SourceUser = User.alias("source")
 TargetUser = User.alias("target")
 
 # Use in aggregates
-class ComplexTransaction(Domain[Aggregate[Buyer, Seller, Admin, Product]]):
+class ComplexTransaction(Aggregate[Buyer, Seller, Admin, Product]):
     buyer_id: Annotated[int, Buyer.id]
     seller_id: Annotated[int, Seller.id]
     approved_by: Annotated[int, Admin.id]
@@ -273,7 +273,7 @@ Define aliases near where they're used:
 Buyer = User.alias("buyer")
 Seller = User.alias("seller")
 
-class Transaction(Domain[Aggregate[Buyer, Seller, Product]]):
+class Transaction(Aggregate[Buyer, Seller, Product]):
     ...
 ```
 

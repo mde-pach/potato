@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Annotated
 
 import pytest
+from pydantic import ValidationError
 
 from potato.domain.aggregates import Aggregate
 from potato.dto import ViewDTO
@@ -267,6 +268,3 @@ class TestAliasDefinitions:
     def test_buyer_and_seller_are_different(self, buyer_alias, seller_alias):
         """Test that Buyer and Seller aliases are different."""
         assert buyer_alias is not seller_alias
-
-
-from pydantic import ValidationError

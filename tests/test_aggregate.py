@@ -17,14 +17,14 @@ from .conftest import Price, Product, User
 # =============================================================================
 
 
-class SimpleOrder(Domain[Aggregate[User, Product]]):
+class SimpleOrder(Aggregate[User, Product]):
     """Simple aggregate with two domains."""
 
     customer: User
     product: Product
 
 
-class OrderWithFieldExtraction(Domain[Aggregate[User, Price, Product]]):
+class OrderWithFieldExtraction(Aggregate[User, Price, Product]):
     """Aggregate with field extraction."""
 
     customer: User
@@ -33,7 +33,7 @@ class OrderWithFieldExtraction(Domain[Aggregate[User, Price, Product]]):
     product: Product
 
 
-class ComplexOrder(Domain[Aggregate[User, Price, Product]]):
+class ComplexOrder(Aggregate[User, Price, Product]):
     """Complex aggregate with both full domains and extracted fields."""
 
     customer: User
@@ -184,7 +184,7 @@ class TestAggregateValidation:
     def test_missing_required_domain_raises_error(self, simple_user: User) -> None:
         """Test that missing required domain raises error."""
         with pytest.raises(ValidationError):
-            SimpleOrder(customer=simple_user)
+            SimpleOrder(customer=simple_user)  # type: ignore[call-arg]
 
     def test_missing_extracted_field_raises_error(
         self, simple_user: User, simple_product: Product

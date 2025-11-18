@@ -30,7 +30,7 @@ An **aggregate** is a cluster of domain objects that are treated as a single uni
 In Potato, aggregates are domains that compose multiple other domains:
 
 ```python
-class Order(Domain[Aggregate[User, Product, Price]]):
+class Order(Aggregate[User, Product, Price]):
     customer: User
     product: Product
     total: Annotated[int, Price.amount]
@@ -129,7 +129,7 @@ class UserView(ViewDTO[User]):
 Aggregates must explicitly declare their dependencies:
 
 ```python
-class Order(Domain[Aggregate[User, Product, Price]]):
+class Order(Aggregate[User, Product, Price]):
     # All referenced domains must be in Aggregate[...]
 ```
 

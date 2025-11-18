@@ -26,7 +26,8 @@ from pydantic._internal._model_construction import (
     PydanticModelPrivateAttr,
 )
 
-from .aggregates import Aggregate
+if TYPE_CHECKING:
+    from .aggregates import Aggregate
 
 
 class FieldProxy:
@@ -54,10 +55,12 @@ class FieldProxy:
         >>> class EntityDTO(ViewDTO[DomainA]):
         ...     display_name: Annotated[str, DomainA.name]  # Maps display_name -> name
         >>>
-        >>> # Multiple instances
-        >>> class RelationView(ViewDTO[Aggregate[DomainA, DomainA, DomainB]]):
-        ...     source_name: Annotated[str, DomainA("source").name]
-        ...     target_name: Annotated[str, DomainA("target").name]
+        >>> # Multiple instances with aliasing
+        >>> Source = DomainA.alias("source")
+        >>> Target = DomainA.alias("target")
+        >>> class RelationView(ViewDTO[Aggregate[Source, Target, DomainB]]):
+        ...     source_name: Annotated[str, Source.name]
+        ...     target_name: Annotated[str, Target.name]
     """
 
     def __init__(self, model_cls: type, field_name: str, alias: str | None = None):
@@ -219,7 +222,7 @@ class AliasedTypeMeta(type):
                 "__module__": domain_cls.__module__,
             },
         )
-        
+
         # Explicitly set attributes after creation to ensure they're accessible
         # This is needed because Pydantic's metaclass may interfere with namespace attributes
         setattr(new_type, "_domain_cls", domain_cls)
@@ -398,20 +401,14 @@ class DomainMeta(ModelMetaclass):
             return super().__getattr__(name)
 
 
-AggregateD = TypeVarTuple("AggregateD")
-
-A = Aggregate[*AggregateD]
-
-
-class Domain[T: A | None = None](BaseModel, metaclass=DomainMeta):
+class Domain(BaseModel, metaclass=DomainMeta):
     """
-    Base class for all domain models with optional aggregate support.
+    Base class for all domain models.
 
     Domain extends Pydantic's BaseModel with additional features:
     1. Field access as class attributes (e.g., DomainA.name)
-    2. Aggregate support via Domain[Aggregate[Type1, Type2, ...]]
-    3. Aliasing via DomainA.alias("first") for multiple instances
-    4. Compile-time validation of field mappings and aggregate declarations
+    2. Aliasing via DomainA.alias("first") for multiple instances
+    3. Compile-time validation of field mappings and aggregate declarations
 
     Basic Usage:
         >>> class DomainA(Domain):
@@ -419,17 +416,19 @@ class Domain[T: A | None = None](BaseModel, metaclass=DomainMeta):
         ...     name: str
         ...     value: str
 
-    Aggregate Usage:
-        >>> class DomainC(Domain[Aggregate[DomainA, DomainB]]):
-        ...     entity_a: DomainA
-        ...     description: Annotated[str, DomainB.description]
+    For aggregates that encapsulate multiple domains, use the Aggregate class:
+        >>> class Order(Aggregate[User, Product, Price]):
+        ...     customer: User
+        ...     product_name: Annotated[str, Product.name]
+        ...     price_amount: Annotated[int, Price.amount]
 
-    Aliasing Usage:
-        >>> Source = DomainA.alias("source")
-        >>> Target = DomainA.alias("target")
-        >>> class RelationView(ViewDTO[Aggregate[Source, Target, DomainB]]):
-        ...     source_id: Annotated[int, Source.id]
-        ...     target_id: Annotated[int, Target.id]
+    Aliasing Usage (for multiple instances of the same domain):
+        >>> Buyer = User.alias("buyer")
+        >>> Seller = User.alias("seller")
+        >>> class Transaction(Aggregate[Buyer, Seller, Product]):
+        ...     buyer_id: Annotated[int, Buyer.id]
+        ...     seller_id: Annotated[int, Seller.id]
+        ...     product: Product
 
     Attributes:
         __aggregate_domain_types__: Tuple of Domain types in the aggregate
