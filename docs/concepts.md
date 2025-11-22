@@ -1,175 +1,230 @@
 # Core Concepts
 
-This guide explains the foundational concepts behind Potato: Domain-Driven Design (DDD), Data Transfer Objects (DTOs), and unidirectional data flow.
+Understanding the foundational concepts behind Potato will help you build better applications.
 
 ## Domain-Driven Design (DDD)
 
-Domain-Driven Design is a software development approach that focuses on modeling software to match a domain according to input from domain experts.
+Potato is inspired by Domain-Driven Design principles:
 
-### Domain Models
+- **Domain Models** represent your core business entities and rules
+- **Ubiquitous Language** ensures consistency across your codebase
+- **Bounded Contexts** define clear boundaries between different parts of your system
 
-A **domain model** represents a concept from your business domain. It encapsulates both data and behavior related to that concept. In Potato, domain models are the core entities of your application.
+### Domain Models in Potato
+
+A Domain model is a rich business entity that encapsulates:
+- **State**: The data that defines the entity
+- **Behavior**: Methods that operate on that data
+- **Rules**: Invariants that must always be true
 
 ```python
+from potato import Domain
+
 class User(Domain):
     id: int
     username: str
     email: str
-    created_at: datetime
+    
+    def activate(self) -> None:
+        """Domain behavior"""
+        self.is_active = True
 ```
-
-Domain models should:
-- Represent business concepts, not database tables or API schemas
-- Contain business logic and validation rules
-- Be independent of external systems (databases, APIs, UIs)
-
-### Aggregates
-
-An **aggregate** is a cluster of domain objects that are treated as a single unit. Aggregates help maintain consistency boundaries in your domain.
-
-In Potato, aggregates are domains that compose multiple other domains:
-
-```python
-class Order(Aggregate[User, Product, Price]):
-    customer: User
-    product: Product
-    total: Annotated[int, Price.amount]
-```
-
-### Bounded Contexts
-
-A **bounded context** defines the limits of a particular domain model. The same concept (like "User") might have different representations in different contexts (e.g., "Customer" in sales, "Employee" in HR).
-
-Potato helps you maintain clear boundaries by enforcing separation between domain models and their external representations.
 
 ## Data Transfer Objects (DTOs)
 
-A **Data Transfer Object (DTO)** is an object that carries data between processes or layers. DTOs have no behavior except for storage and retrieval of data.
+DTOs are simple structures for **transferring data** between layers or across boundaries. Unlike domain models, DTOs:
+- Have **no behavior** (pure data)
+- Are **immutable** (for ViewDTOs)
+- Serve a **single purpose** (inbound or outbound)
 
-### Why Use DTOs?
+### Why DTOs?
 
-1. **Separation of Concerns**: Your domain models don't need to match external API contracts
-2. **Versioning**: You can evolve your domain models independently from API schemas
-3. **Security**: Control exactly what data is exposed externally
-4. **Performance**: Transfer only the data you need
+Without DTOs, you often:
+- Expose internal domain structure to external consumers
+- Couple your API to your domain model
+- Make it hard to evolve your domain independently
 
-### DTO Patterns
-
-There are two main DTO patterns:
-
-- **Input DTOs**: Transform external data into domain models
-- **Output DTOs**: Transform domain models into external representations
-
-Potato enforces this separation with two distinct types: `BuildDTO` and `ViewDTO`.
+With DTOs, you get:
+- **Stability**: API changes don't force domain changes
+- **Security**: Only expose what's necessary
+- **Flexibility**: Transform data as needed
 
 ## Unidirectional Data Flow
 
-Unidirectional data flow means data moves in one direction through your application layers. This makes data transformations predictable and easier to reason about.
-
-### The Flow
+Potato enforces **unidirectional data flow** with two types of DTOs:
 
 ```
-External System → BuildDTO → Domain Model → ViewDTO → External System
+External World ──BuildDTO──> Domain ──ViewDTO──> External World
+    (Input)                   (Logic)              (Output)
 ```
 
-1. **Inbound (BuildDTO)**: External data enters your system
-   - API requests, form submissions, database records
-   - Validated and transformed into domain models
-   - Example: `CreateUser` DTO → `User` domain
+### BuildDTO: Inbound Flow
 
-2. **Domain Layer**: Your business logic operates here
-   - Domain models contain business rules
-   - Operations are performed on domain models
-   - Example: `User` domain with business methods
-
-3. **Outbound (ViewDTO)**: Domain models are transformed for external consumption
-   - API responses, serialized data, UI models
-   - Domain models are transformed into DTOs
-   - Example: `User` domain → `UserView` DTO
-
-### Benefits
-
-- **Predictability**: Data always flows in one direction
-- **Testability**: Each transformation can be tested independently
-- **Maintainability**: Changes to external contracts don't affect domain models
-- **Type Safety**: Compile-time validation ensures correct data flow
-
-## Potato's Opinionated Approach
-
-Potato makes several opinionated choices to enforce best practices:
-
-### 1. Separate Input and Output DTOs
-
-Potato provides two distinct base classes:
-- `BuildDTO[D]`: For constructing domain models from external data
-- `ViewDTO[D]`: For creating external representations from domain models
-
-This separation prevents accidentally using the wrong DTO type and makes data flow explicit.
-
-### 2. Immutable ViewDTOs
-
-`ViewDTO` instances are **frozen** (immutable) by default. This prevents accidental mutations of data that's meant to be read-only:
+**Purpose**: Validate and convert external data into domain models
 
 ```python
-view = UserView.build(user)
-view.username = "hacker"  # ❌ Raises ValidationError
+class UserCreate(BuildDTO[User]):
+    username: str
+    email: str
+    # System fields (like 'id') are excluded
+
+# Receive external data
+dto = UserCreate(username="alice", email="alice@example.com")
+
+# Convert to domain
+user = dto.to_domain(id=generate_id())
 ```
 
-### 3. Type-Safe Field Mapping
+**Use cases:**
+- API request bodies
+- Form submissions
+- External data imports
+- Database records → Domain objects
 
-Potato uses Python's type system to ensure field mappings are correct at compile time:
+### ViewDTO: Outbound Flow
+
+**Purpose**: Transform domain models into external representations
 
 ```python
 class UserView(ViewDTO[User]):
-    login: Annotated[str, User.username]  # ✅ Type-checked
+    id: int
+    login: str = Field(source=User.username)
+    email: str
+
+# Convert domain to view
+view = UserView.build(user)
+
+# Send to external consumer
+return view.model_dump()
 ```
 
-### 4. Explicit Aggregate Declarations
+**Use cases:**
+- API responses
+- UI data
+- Report generation
+- Domain objects → Database records
 
-Aggregates must explicitly declare their dependencies:
+## Type Safety
+
+Potato provides **compile-time type safety** through:
+
+### 1. Static Typing
+
+All DTOs and Domains use Python type hints:
 
 ```python
-class Order(Aggregate[User, Product, Price]):
-    # All referenced domains must be in Aggregate[...]
+class User(Domain):
+    id: int  # Not str, not None - exactly int
+    username: str
 ```
 
-This makes dependencies clear and enables compile-time validation.
+### 2. Pydantic Validation
 
-### 5. Domain Aliasing for Multiple Instances
-
-When you need multiple instances of the same domain type, aliasing makes it explicit:
+Runtime validation ensures data integrity:
 
 ```python
-Buyer = User.alias("buyer")
-Seller = User.alias("seller")
-
-class TransactionView(ViewDTO[Aggregate[Buyer, Seller, Product]]):
-    buyer_name: Annotated[str, Buyer.username]
-    seller_name: Annotated[str, Seller.username]
+dto = UserCreate(username="alice", email="invalid")  # ValidationError!
 ```
 
-## When to Use Potato
+### 3. Mypy Plugin
 
-Potato is ideal when:
+The Mypy plugin catches errors **before runtime**:
 
-- ✅ You need clear separation between domain models and external APIs
-- ✅ You want compile-time validation of data transformations
-- ✅ You're building APIs that need to evolve independently
-- ✅ You want to prevent accidental coupling between layers
-- ✅ You need to handle complex aggregates with multiple domain types
+```python
+class UserView(ViewDTO[User]):
+    id: int
+    login: str = Field(source=User.username)
+    # Missing 'email' field - Mypy error!
+```
 
-Potato might not be the right choice when:
+## Immutability
 
-- ❌ You have simple CRUD applications with 1:1 domain-to-API mapping
-- ❌ You don't need strict boundaries between layers
-- ❌ You're prototyping and need maximum flexibility
+ViewDTOs are **frozen by default**:
 
-## Next Steps
+```python
+view = UserView.build(user)
+view.id = 999  # Error! ViewDTO is immutable
+```
 
-Now that you understand the concepts, let's build something:
+**Why immutability?**
+- Prevents accidental mutations
+- Makes data flow predictable
+- Enables safe sharing across boundaries
+- Easier to reason about
 
-- **[Quickstart Guide](quickstart.md)** - Build your first DTOs
-- **[Domain Models](core/domain.md)** - Learn about creating domain models
-- **[ViewDTO](core/viewdto.md)** - Create output DTOs
-- **[BuildDTO](core/builddto.md)** - Create input DTOs
+## Aggregates
 
+An **Aggregate** is a cluster of related domain objects treated as a single unit:
+
+```python
+from potato import Aggregate
+
+class OrderAggregate(Aggregate[Order, User, Product]):
+    order: Order
+    buyer: User
+    product: Product
+```
+
+**Key concepts:**
+- **Consistency Boundary**: All changes within an aggregate are atomic
+- **Root Entity**: One entity (usually `Order`) is the entry point
+- **Encapsulation**: Internal relationships are hidden from outside
+
+### Multi-Domain DTOs
+
+Build DTOs from aggregates:
+
+```python
+class OrderView(ViewDTO[OrderAggregate]):
+    order_id: int = Field(source=OrderAggregate.order.id)
+    buyer_name: str = Field(source=OrderAggregate.buyer.username)
+    product_name: str = Field(source=OrderAggregate.product.name)
+
+view = OrderView.build(order_agg)
+```
+
+## System Fields
+
+`System[T]` marks fields managed by your system:
+
+```python
+class User(Domain):
+    id: System[int]  # Auto-generated
+    created_at: System[datetime]  # Set by database
+    username: str  # User-provided
+```
+
+**Behavior:**
+- **Excluded from BuildDTO**: Users can't set these fields
+- **Required in ViewDTO**: Always present in output
+- **Provided to `to_domain()`**: You supply them when creating domains
+
+## Separation of Concerns
+
+Potato enforces clean architecture:
+
+| Layer | Responsibility | Potato Type |
+|-------|---------------|-------------|
+| **Presentation** | API contracts, serialization | `ViewDTO`, `BuildDTO` |
+| **Domain** | Business logic, rules | `Domain` |
+| **Infrastructure** | Database, external services | N/A |
+
+**Benefits:**
+- Domain logic is **portable** (no dependency on frameworks)
+- API can **evolve independently** from domain
+- Testing is **easier** (mock DTOs, test domain in isolation)
+
+## Summary
+
+| Concept | Purpose | Potato Implementation |
+|---------|---------|----------------------|
+| Domain Model | Business entity | `Domain` |
+| Inbound DTO | External → Domain | `BuildDTO` |
+| Outbound DTO | Domain → External | `ViewDTO` |
+| Multi-Domain | Grouped entities | `Aggregate` |
+| System Fields | Auto-generated data | `System[T]` |
+| Type Safety | Compile-time validation | Mypy plugin |
+
+---
+
+**Next:** Learn how to use these concepts in practice with [ViewDTO](core/viewdto.md) and [BuildDTO](core/builddto.md).

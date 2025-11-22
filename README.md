@@ -1,21 +1,62 @@
-# Potato
+# Potato 🥔
 
-**Type-safe DTOs and Domain models for unidirectional data flow**
+**Type-safe DTOs for clean architecture in Python**
 
-Potato is a Python library that enforces clean separation between your domain models and external data representations. Built on Pydantic, it provides type-safe Data Transfer Objects (DTOs) that ensure unidirectional data flow in your applications.
+Potato is a Python library that enforces clean separation between your domain models and external data representations. Built on Pydantic v2, it provides type-safe Data Transfer Objects (DTOs) with compile-time validation through an integrated Mypy plugin.
 
 ## Features
 
-- **Type-safe Domain Models**: Build rich domain models with compile-time validation
-- **Unidirectional Data Flow**: Separate `BuildDTO` (inbound) and `ViewDTO` (outbound) for clear boundaries
-- **Aggregate Support**: Compose multiple domains into aggregates with compile-time validation
-- **Domain Aliasing**: Handle multiple instances of the same domain type in aggregates
-- **Immutable Views**: `ViewDTO` instances are frozen by default, preventing accidental mutations
-- **Pydantic Integration**: Built on Pydantic v2 for robust validation and serialization
+- 🛡️ **Type Safety**: Compile-time validation with Mypy plugin
+- 🔄 **Unidirectional Data Flow**: Separate `ViewDTO` (outbound) and `BuildDTO` (inbound)
+- 🎯 **Field Mapping**: Map domain fields to different names using `Field(source=...)`
+- 🧮 **Computed Fields**: Add derived fields with `@computed` decorator
+- 📦 **System Fields**: Handle auto-generated fields with `System[T]`
+- 🔗 **Aggregates**: Compose multiple domains with type-safe aggregates
+- 🏗️ **Domain Aliasing**: Handle multiple instances of the same domain type
+- ❄️ **Immutability**: ViewDTOs are frozen by default
 
-## Quick Start
+## Quick Example
 
-### Installation
+```python
+from potato import Domain, ViewDTO, BuildDTO, Field, System, computed
+
+# Define your domain model
+class User(Domain):
+    id: System[int]  # System-managed field
+    username: str
+    email: str
+    is_active: bool
+
+# Create a ViewDTO for API responses (outbound)
+class UserView(ViewDTO[User]):
+    id: int
+    login: str = Field(source=User.username)  # Map username → login
+    email: str
+    
+    @computed
+    def display_name(self, user: User) -> str:
+        """Computed field"""
+        return f"@{user.username}"
+
+# Create a BuildDTO for API requests (inbound)
+class UserCreate(BuildDTO[User]):
+    username: str
+    email: str
+    is_active: bool = True
+    # 'id' is excluded (System field)
+
+# Usage - Outbound
+user = User(id=1, username="alice", email="alice@example.com", is_active=True)
+view = UserView.build(user)
+print(view.login)  # "alice"
+print(view.display_name)  # "@alice"
+
+# Usage - Inbound
+dto = UserCreate(username="bob", email="bob@example.com")
+user = dto.to_domain(id=2)  # Provide system fields
+```
+
+## Installation
 
 ```bash
 pip install potato
@@ -27,106 +68,67 @@ Or with uv:
 uv add potato
 ```
 
-### Basic Usage
+## Type Safety with Mypy
+
+Potato includes a Mypy plugin that validates your DTOs at compile time:
 
 ```python
-from potato.domain import Domain
-from potato.dto import ViewDTO, BuildDTO
-from typing import Annotated
-
-# Define your domain model
-class User(Domain):
-    id: int
-    username: str
-    email: str
-
-# Create a DTO for API responses (outbound)
 class UserView(ViewDTO[User]):
     id: int
-    login: Annotated[str, User.username]  # Rename field
-    email: str
-
-# Create a DTO for API requests (inbound)
-class CreateUser(BuildDTO[User]):
-    username: str
-    email: str
-
-# Usage
-user = User(id=1, username="alice", email="alice@example.com")
-view = UserView.build(user)  # Creates immutable view
-print(view.login)  # "alice"
-
-# Build domain from external data
-create_dto = CreateUser(username="bob", email="bob@example.com")
-user = User(**create_dto.model_dump(), id=2)
+    login: str = Field(source=User.username)
+    # Missing 'email' field - Mypy will catch this!
 ```
+
+**Enable the plugin** in your `mypy.ini`:
+
+```ini
+[mypy]
+plugins = potato.mypy
+```
+
+## Documentation
+
+- **[Quickstart Guide](docs/quickstart.md)** - Get started in 5 minutes
+- **[Core Concepts](docs/concepts.md)** - Understand DTOs and Domain models
+- **[ViewDTO Guide](docs/core/viewdto.md)** - Outbound data flow
+- **[BuildDTO Guide](docs/core/builddto.md)** - Inbound data flow
+- **[Aggregates](docs/core/aggregates.md)** - Multi-domain composition
+- **[Mypy Plugin](docs/mypy.md)** - Type safety and validation
+- **[Examples](docs/guides/examples.md)** - Real-world use cases
 
 ## Why Potato?
 
 Modern applications need clear boundaries between:
-- **External data** (API requests, database records, user input)
-- **Domain logic** (your business models and rules)
+- **External data** (API requests, database records)
+- **Domain logic** (business models and rules)
 - **External representations** (API responses, serialized data)
 
-Potato enforces these boundaries with type-safe DTOs that:
-- Prevent accidental coupling between external and internal representations
-- Make data transformations explicit and traceable
-- Enable compile-time validation of data flow
-- Support complex scenarios like aggregates and multiple domain instances
-
-## Documentation
-
-Full documentation is available at: **[Documentation Site](https://potato.readthedocs.io/)**
-
-Quick links:
-- **[Concepts](docs/concepts.md)** - Learn about DDD, DTOs, and unidirectional flow
-- **[Quickstart](docs/quickstart.md)** - Get up and running in minutes
-- **[Core Features](docs/core/domain.md)** - Deep dive into Domain models, ViewDTO, BuildDTO, Aggregates, and Aliasing
-- **[Guides](docs/guides/patterns.md)** - Common patterns and best practices
-- **[Examples](docs/guides/examples.md)** - Complete real-world examples
-
-## Requirements
-
-- Python >= 3.14
-- Pydantic >= 2.12.4
+Potato enforces these boundaries with:
+- **Type-safe DTOs** that prevent coupling
+- **Explicit transformations** that are easy to trace
+- **Compile-time validation** that catches errors early
+- **Immutable views** that prevent accidental mutations
 
 ## Development
 
-### Setup
-
 ```bash
-# Clone the repository
-git clone https://github.com/your-org/potato.git
-cd potato
-
 # Install dependencies
 uv sync
 
 # Run tests
-pytest
+uv run pytest
 
-# Build documentation
-mkdocs serve
-```
+# Type check
+uv run mypy src/
 
-### Type Checking
-
-Potato includes a mypy plugin for compile-time validation. Enable it in your `pyproject.toml`:
-
-```toml
-[tool.mypy]
-plugins = ["potato.mypy"]
+# Run all checks
+uv run pytest && uv run mypy src/
 ```
 
 ## License
 
-[Add your license here]
-
-## Contributing
-
-Contributions are welcome! Please read our contributing guidelines first.
+MIT
 
 ---
 
-**Ready to get started?** Check out the [Quickstart Guide](docs/quickstart.md) or read the [full documentation](https://potato.readthedocs.io/).
-
+**Ready to get started?** → [Quickstart Guide](docs/quickstart.md)

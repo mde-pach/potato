@@ -248,6 +248,32 @@ class TestBuildDTOWithComplexData:
         assert len(dto.username) == 1000
 
 
+class TestBuildDTOSystemExclusion:
+    """Test BuildDTO system field exclusion."""
+
+    def test_build_dto_system_exclusion(self) -> None:
+        """Test that System[T] fields are excluded from BuildDTO but required for to_domain."""
+        from potato import BuildDTO, System, Domain
+
+        class User(Domain):
+            id: System[int]
+            username: str
+
+        # Rebuild the model to resolve forward references
+        User.model_rebuild()
+
+        class UserCreate(BuildDTO[User]):
+            username: str
+
+        # DTO should not have 'id'
+        dto = UserCreate(username="testuser")
+        assert not hasattr(dto, "id")
+
+        # to_domain should require 'id'
+        user = dto.to_domain(id=1)
+        assert user.id == 1
+        assert user.username == "testuser"
+
 class TestBuildDTOEquality:
     """Test BuildDTO equality."""
 

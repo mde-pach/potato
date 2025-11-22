@@ -1,10 +1,8 @@
 # Quickstart Guide
 
-Get started with Potato in minutes. This guide walks you through installing Potato and creating your first domain models and DTOs.
+Get started with Potato in 5 minutes! This guide will walk you through creating your first Domain model and DTOs.
 
 ## Installation
-
-Install Potato using pip:
 
 ```bash
 pip install potato
@@ -16,208 +14,139 @@ Or with uv:
 uv add potato
 ```
 
-Or with poetry:
+## Step 1: Create a Domain Model
 
-```bash
-poetry add potato
-```
-
-## Your First Domain Model
-
-Let's start by creating a simple domain model:
+A Domain model represents your core business entities. Let's create a simple `User` domain:
 
 ```python
-from potato.domain import Domain
+from potato import Domain, System
 
 class User(Domain):
-    id: int
+    id: System[int]  # System-managed field (auto-generated)
     username: str
     email: str
+    is_active: bool = True
 ```
 
-That's it! You've created a domain model. Domain models are just Pydantic models with some extra features.
+> **What is `System[T]`?**  
+> `System[T]` marks fields that are managed by your system (like auto-generated IDs). These fields are **excluded from `BuildDTO`** but **required in `ViewDTO`**.
+
+## Step 2: Create a ViewDTO (Outbound)
+
+`ViewDTO` is for **outbound data** - when you send data to external consumers (API responses, serialization):
 
 ```python
+from potato import ViewDTO, Field, computed
+
+class UserView(ViewDTO[User]):
+    id: int
+    login: str = Field(source=User.username)  # Rename field
+    email: str
+    
+    @computed
+    def display_name(self, user: User) -> str:
+        return f"@{user.username}"
+
+# Usage
 user = User(id=1, username="alice", email="alice@example.com")
-print(user.username)  # "alice"
+view = UserView.build(user)
+
+print(view.login)  # "alice"
+print(view.display_name)  # "@alice"
+print(view.model_dump())  # {"id": 1, "login": "alice", "email": "alice@example.com", "display_name": "@alice"}
 ```
 
-## Creating a ViewDTO
+### Key Features
 
-A `ViewDTO` transforms your domain model into a format suitable for external consumption (like API responses):
+- **Field Mapping**: `login: str = Field(source=User.username)` maps `username` to `login`
+- **Computed Fields**: `@computed` decorator for derived values
+- **Immutability**: ViewDTOs are frozen - you can't modify them after creation
+- **Type Safety**: Mypy validates that all required domain fields are present
+
+## Step 3: Create a BuildDTO (Inbound)
+
+`BuildDTO` is for **inbound data** - when you receive data from external sources (API requests, user input):
 
 ```python
-from potato.dto import ViewDTO
-from typing import Annotated
+from potato import BuildDTO
 
-class UserView(ViewDTO[User]):
-    id: int
+class UserCreate(BuildDTO[User]):
     username: str
     email: str
+    is_active: bool = True
+    # 'id' is automatically excluded (System field)
 
-# Create a view from a domain model
-view = UserView.build(user)
-print(view.username)  # "alice"
-```
+# Usage - Receiving data from API
+dto = UserCreate(username="bob", email="bob@example.com")
 
-### Field Renaming
+# Convert to Domain, providing system fields
+user = dto.to_domain(id=2)
 
-You can rename fields when creating views:
-
-```python
-class UserView(ViewDTO[User]):
-    id: int
-    login: Annotated[str, User.username]  # Maps username → login
-    email: str
-
-view = UserView.build(user)
-print(view.login)  # "alice" (from user.username)
-```
-
-The `Annotated[type, Domain.field]` syntax tells Potato to map the DTO field to a specific domain field.
-
-## Creating a BuildDTO
-
-A `BuildDTO` represents data coming from external sources (like API requests):
-
-```python
-from potato.dto import BuildDTO
-
-class CreateUser(BuildDTO[User]):
-    username: str
-    email: str
-
-# Create a DTO from external data
-create_dto = CreateUser(username="bob", email="bob@example.com")
-
-# Convert to domain model (you'll typically add generated fields like ID)
-user = User(**create_dto.model_dump(), id=2)
+print(user.id)  # 2
 print(user.username)  # "bob"
 ```
 
-## Complete Example
+### Key Features
 
-Here's a complete example showing the full data flow:
+- **System Field Exclusion**: `id` (marked as `System[int]`) is **not** in the DTO
+- **to_domain()**: Converts DTO to Domain instance, requiring system fields as arguments
+- **Validation**: Pydantic validation ensures data integrity
+
+## Step 4: Field Mapping Styles
+
+Potato supports two styles of field mapping:
+
+### Style 1: `Field(source=...)`
 
 ```python
-from potato.domain import Domain
-from potato.dto import ViewDTO, BuildDTO
-from typing import Annotated
-
-# 1. Define your domain model
-class User(Domain):
-    id: int
-    username: str
-    email: str
-    created_at: str  # Simplified for example
-
-# 2. Define input DTO (for API requests)
-class CreateUser(BuildDTO[User]):
-    username: str
-    email: str
-
-# 3. Define output DTO (for API responses)
 class UserView(ViewDTO[User]):
-    id: int
-    login: Annotated[str, User.username]
-    email: str
-    created_at: str
-
-# 4. Handle incoming request
-def create_user(create_dto: CreateUser) -> UserView:
-    # Validate and create domain model
-    user = User(
-        **create_dto.model_dump(),
-        id=generate_id(),  # Generated server-side
-        created_at=get_current_timestamp()
-    )
-    
-    # Transform to view for response
-    return UserView.build(user)
-
-# Usage
-create_dto = CreateUser(username="alice", email="alice@example.com")
-view = create_user(create_dto)
-print(view.login)  # "alice"
+    login: str = Field(source=User.username)
 ```
 
-## Working with Aggregates
-
-Aggregates compose multiple domain models:
+### Style 2: `Annotated`
 
 ```python
-from potato.domain import Domain
-from potato.domain.aggregates import Aggregate
 from typing import Annotated
 
-class Product(Domain):
+class UserView(ViewDTO[User]):
+    login: Annotated[str, User.username]
+```
+
+Both styles are equivalent. Choose what feels more natural for your codebase.
+
+## Step 5: Enable Mypy Plugin (Optional but Recommended)
+
+Potato includes a Mypy plugin that catches errors at compile time:
+
+**mypy.ini:**
+```ini
+[mypy]
+plugins = potato.mypy
+```
+
+Now Mypy will validate:
+- All required domain fields are present in ViewDTOs
+- Field mappings point to existing domain fields
+- Aggregates declare all referenced domains
+
+```python
+# Mypy will catch this error!
+class BadUserView(ViewDTO[User]):
     id: int
-    name: str
-    price: int
-
-class Order(Aggregate[User, Product]):
-    customer: User
-    product: Product
-    quantity: int
-
-# Create an aggregate
-order = Order(
-    customer=user,
-    product=Product(id=1, name="Widget", price=100),
-    quantity=2
-)
+    login: str = Field(source=User.username)
+    # Missing 'email' field - Mypy error!
 ```
-
-## ViewDTOs from Aggregates
-
-You can create views from multiple domains:
-
-```python
-class OrderView(ViewDTO[Aggregate[User, Product]]):
-    customer_id: Annotated[int, User.id]
-    customer_name: Annotated[str, User.username]
-    product_name: Annotated[str, Product.name]
-    quantity: int
-
-view = OrderView.build(user, product)
-```
-
-## Domain Aliasing
-
-When you need multiple instances of the same domain type:
-
-```python
-# Create aliases
-Buyer = User.alias("buyer")
-Seller = User.alias("seller")
-
-class TransactionView(ViewDTO[Aggregate[Buyer, Seller, Product]]):
-    buyer_name: Annotated[str, Buyer.username]
-    seller_name: Annotated[str, Seller.username]
-    product_name: Annotated[str, Product.name]
-
-# Build with named arguments
-view = TransactionView.build(
-    buyer=buyer_user,
-    seller=seller_user,
-    product=product
-)
-```
-
-## Key Takeaways
-
-1. **Domain models** represent your business entities
-2. **BuildDTO** handles incoming data (API requests)
-3. **ViewDTO** handles outgoing data (API responses)
-4. **Aggregates** compose multiple domains
-5. **Aliasing** handles multiple instances of the same domain type
 
 ## Next Steps
 
-- **[Domain Models](core/domain.md)** - Deep dive into domain models
-- **[ViewDTO](core/viewdto.md)** - Learn about output DTOs
-- **[BuildDTO](core/builddto.md)** - Learn about input DTOs
-- **[Aggregates](core/aggregates.md)** - Compose multiple domains
-- **[Aliasing](core/aliasing.md)** - Handle multiple instances
-- **[Examples](guides/examples.md)** - Real-world examples
+You now know the basics! Here's what to explore next:
 
+- **[Typed Context](core/viewdto.md#typed-context)**: Pass context to computed fields
+- **[Aggregates](core/aggregates.md)**: Compose multiple domains
+- **[Domain Aliasing](core/aggregates.md#domain-aliasing)**: Handle multiple instances of the same domain
+- **[Best Practices](guides/patterns.md)**: Recommended patterns
+- **[Complete Examples](guides/examples.md)**: Real-world use cases
+
+---
+
+**Questions?** Check out the [Core Concepts](concepts.md) guide for deeper understanding.

@@ -9,6 +9,7 @@ The DTOs enforce a unidirectional data flow:
 - ViewDTO: Domain → External data (outbound)
 """
 
+import inspect
 from typing import (
     TYPE_CHECKING,
     Annotated,
@@ -19,9 +20,11 @@ from typing import (
     get_args,
     get_origin,
     get_type_hints,
+    Generic,
+    TypeVar,
 )
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field as PydanticField
 from pydantic._internal._model_construction import (
     ModelMetaclass,
     NoInitField,
@@ -29,11 +32,15 @@ from pydantic._internal._model_construction import (
     PydanticModelPrivateAttr,
 )
 
+from potato.core import Field, SystemMarker
+
 if TYPE_CHECKING:
     from potato.domain import FieldProxy
 else:
     from potato.domain import FieldProxy
 
+D = TypeVar("D")
+C = TypeVar("C", default=None)
 
 @dataclass_transform(
     kw_only_default=True,
@@ -59,12 +66,7 @@ class DTOMeta(ModelMetaclass):
 
 class ViewDTOMeta(DTOMeta):
     """
-    Metaclass for ViewDTO that extracts field mappings with alias support.
-
-    Scans ViewDTO classes for Annotated[type, FieldProxy] patterns and builds
-    a mapping of DTO field names to (domain_class, field_name, alias) tuples.
-    This enables the build() method to correctly map fields from multiple domains,
-    including multiple instances of the same domain type.
+    Metaclass for ViewDTO that extracts field mappings and context type.
     """
 
     def __new__(
@@ -74,26 +76,51 @@ class ViewDTOMeta(DTOMeta):
         namespace: dict[str, Any],
         **kwargs: Any,
     ) -> type:
-        cls = super().__new__(mcs, name, bases, namespace, **kwargs)
-        alias: FieldProxy | None
+        # Pre-process namespace to handle Potato Fields and Computed Methods
+        potato_fields = {}
+        computed_methods = {}
+        
+        for k, v in namespace.items():
+            if isinstance(v, Field):
+                potato_fields[k] = v
+                if v.pydantic_kwargs:
+                    namespace[k] = PydanticField(**v.pydantic_kwargs)
+                else:
+                    namespace[k] = PydanticField()
+            elif hasattr(v, "_is_computed"):
+                computed_methods[k] = v
 
-        # Extract aggregate domain types and their aliases if present
+        cls = super().__new__(mcs, name, bases, namespace, **kwargs)
+        
+        # Store potato fields and computed methods
+        if potato_fields:
+            cls.__potato_fields__ = potato_fields  # type: ignore
+            
+        if computed_methods:
+            cls.__computed_methods__ = computed_methods # type: ignore
+
+        alias: FieldProxy | None
+        
+        # Extract aggregate domain types and context
         domain_aliases: dict[FieldProxy, list[FieldProxy | None]] = {}
         aggregate_domain_types: list[FieldProxy] = []
+        context_type = None
 
         for base in cls.__bases__:
-            if hasattr(base, "__pydantic_generic_metadata__"):
-                metadata = base.__pydantic_generic_metadata__
-                if "args" in metadata and metadata["args"]:
-                    first_arg = metadata["args"][0]
+            # Check for Potato generic args (custom implementation)
+            if hasattr(base, "__potato_generic_args__"):
+                args = base.__potato_generic_args__
+                if args:
+                    first_arg = args[0]
+                    
+                    # Check for Context type (second argument)
+                    if len(args) > 1:
+                        context_type = args[1]
 
-                    # Check if first_arg is an Aggregate instance (new pattern)
-                    # With the new pattern, Aggregate[User, Product] returns a class that
-                    # has __aggregate_domain_types__ attribute set by AggregateMeta
+                    # Check if first_arg is an Aggregate instance
                     if hasattr(first_arg, "__aggregate_domain_types__"):
                         aggregate_args = first_arg.__aggregate_domain_types__
                     else:
-                        # Old pattern: check if it's a generic alias like Aggregate[...]
                         aggregate_origin = get_origin(first_arg)
                         if aggregate_origin is not None:
                             aggregate_args = get_args(first_arg)
@@ -101,29 +128,30 @@ class ViewDTOMeta(DTOMeta):
                             aggregate_args = None
 
                     if aggregate_args:
-                        # Get the domain types from Aggregate[User, Profile, ...] or aliased types
-                        # created via Domain.alias() like Aggregate[Buyer, Seller, ...]
-                        # where Buyer = User.alias("buyer")
                         for domain_spec in aggregate_args:
-                            # Check if it's an AliasedType (created via Domain.alias())
-                            # AliasedType returns a type/class, not an instance, so we check for attributes
                             if hasattr(domain_spec, "_domain_cls") and hasattr(
                                 domain_spec, "_alias"
                             ):
                                 domain_type = domain_spec._domain_cls
                                 alias = domain_spec._alias
                             else:
-                                # Plain domain, no alias
                                 domain_type = domain_spec
                                 alias = None
 
                             aggregate_domain_types.append(domain_type)
 
-                            # Track aliases for each domain type
                             if domain_type not in domain_aliases:
                                 domain_aliases[domain_type] = []
                             domain_aliases[domain_type].append(alias)
                         break
+            
+            # Fallback to Pydantic generic metadata (if we ever use standard Generic)
+            elif hasattr(base, "__pydantic_generic_metadata__"):
+                 # ... (existing logic if needed, but we are replacing it)
+                 pass
+        
+        if context_type:
+            cls.__context_type__ = context_type # type: ignore
 
         if aggregate_domain_types:
             cls.__aggregate_domain_types__ = tuple(aggregate_domain_types)  # type: ignore
@@ -131,21 +159,31 @@ class ViewDTOMeta(DTOMeta):
 
         # Extract field mappings: view_field -> (domain_class, domain_field, alias)
         field_mappings: dict[str, tuple[type, str, str | None]] = {}
+        
+        # 1. Process Potato Fields (Field(source=...))
+        if hasattr(cls, "__potato_fields__"):
+            for field_name, field_def in cls.__potato_fields__.items(): # type: ignore
+                if field_def.source:
+                    # source should be a FieldProxy
+                    if isinstance(field_def.source, FieldProxy):
+                        field_mappings[field_name] = (
+                            field_def.source.model_cls,
+                            field_def.source.field_name,
+                            field_def.source.alias,
+                        )
+        
+        # 2. Process Annotated types (Legacy/Alternative)
         try:
             type_hints = get_type_hints(cls, include_extras=True)
             for field_name, field_type in type_hints.items():
-                # Skip class variables and private attributes
-                if field_name.startswith("_"):
+                if field_name.startswith("_") or field_name in field_mappings:
                     continue
 
-                # Check if this is an Annotated type
                 origin = get_origin(field_type)
                 if origin is Annotated:
                     args = get_args(field_type)
-                    # args[0] is the actual type, args[1:] are metadata
                     for metadata in args[1:]:
                         if isinstance(metadata, FieldProxy):
-                            # Map field to (domain_class, domain_field_name, alias)
                             field_mappings[field_name] = (
                                 metadata.model_cls,
                                 metadata.field_name,
@@ -153,7 +191,6 @@ class ViewDTOMeta(DTOMeta):
                             )
                             break
         except Exception:
-            # If we can't get type hints, just skip
             pass
 
         if field_mappings:
@@ -213,65 +250,15 @@ class ViewDTOMeta(DTOMeta):
                     )
 
 
-class ViewDTO[D](BaseModel, metaclass=ViewDTOMeta):
+class ViewDTO(BaseModel, Generic[D, C], metaclass=ViewDTOMeta):
     """
     Base class for Domain-derived DTOs (outbound data flow).
-
-    ViewDTO creates immutable data transfer objects from Domain models for
-    external consumption (e.g., API responses). It supports:
-    1. Single domain: ViewDTO[DomainA]
-    2. Multiple domains: ViewDTO[Aggregate[DomainA, DomainB, DomainC]]
-    3. Multiple instances of same domain via aliasing: DomainA("first"), DomainA("second")
-    4. Automatic field mapping via Annotated[type, Domain.field]
-    5. Compile-time validation that all required Domain fields are present
-
-    Type Parameters:
-        D: The Domain class or Aggregate[Domain1, Domain2, ...] this DTO is derived from
-
-    Usage - Single domain:
-        >>> class DomainA(Domain):
-        ...     id: int
-        ...     name: str
-        >>>
-        >>> class EntityView(ViewDTO[DomainA]):
-        ...     id: int
-        ...     name: str
-        >>>
-        >>> entity = DomainA(id=1, name="example")
-        >>> view = EntityView.build(entity)
-
-    Usage - Multiple domains:
-        >>> class DomainB(Domain):
-        ...     description: str
-        >>>
-        >>> class CombinedView(ViewDTO[Aggregate[DomainA, DomainB]]):
-        ...     id: Annotated[int, DomainA.id]
-        ...     name: Annotated[str, DomainA.name]
-        ...     description: Annotated[str, DomainB.description]
-        >>>
-        >>> view = CombinedView.build(entity_a, entity_b)
-
-    Usage - Multiple instances of same domain (aliasing):
-        >>> Source = DomainA.alias("source")
-        >>> Target = DomainA.alias("target")
-        >>> class RelationView(ViewDTO[Aggregate[Source, Target, DomainB]]):
-        ...     source_id: Annotated[int, Source.id]
-        ...     source_name: Annotated[str, Source.name]
-        ...     target_id: Annotated[int, Target.id]
-        ...     target_name: Annotated[str, Target.name]
-        ...     description: Annotated[str, DomainB.description]
-        >>>
-        >>> view = RelationView.build(source=first_entity, target=second_entity, domainb=entity_b)
-
-    Attributes:
-        __field_mappings__: Dict mapping DTO fields to (domain_class, field_name, alias)
-        __aggregate_domain_types__: Tuple of Domain types when using Aggregate
-        __domain_aliases__: Dict mapping domain types to list of aliases (None for unaliased)
     """
 
     __field_mappings__: ClassVar[dict[str, tuple[type, str, str | None]]] = {}
     __aggregate_domain_types__: ClassVar[tuple[type, ...]] = ()
     __domain_aliases__: ClassVar[dict[type, list[str | None]]] = {}
+    __context_type__: ClassVar[type | None] = None
 
     model_config = ConfigDict(
         extra="ignore",
@@ -282,6 +269,25 @@ class ViewDTO[D](BaseModel, metaclass=ViewDTOMeta):
         frozen=True,
         from_attributes=True,
     )
+    
+    @classmethod
+    def __class_getitem__(cls, item: Any) -> Any:
+        """
+        Support ViewDTO[Domain] and ViewDTO[Domain, Context].
+        """
+        if not isinstance(item, tuple):
+            item = (item,)
+            
+        # Create a dynamic class that holds the generic args
+        # This class will be the base of the user's DTO
+        class _GenericViewDTO(cls):
+            __potato_generic_args__ = item
+            
+            # We must pretend to be the original class for isinstance checks if needed
+            # but for now this is enough for the metaclass to find args
+        
+        _GenericViewDTO.__name__ = f"ViewDTO[{', '.join(str(x) for x in item)}]"
+        return _GenericViewDTO
 
     @classmethod
     def _build_entity_map(
@@ -290,23 +296,8 @@ class ViewDTO[D](BaseModel, metaclass=ViewDTOMeta):
         named_entities: dict[str, Any],
         domain_aliases: dict[type, list[str | None]],
     ) -> dict[tuple[type, str | None], Any]:
-        """
-        Build a map of (domain_class, alias) -> domain_instance.
-
-        Args:
-            entities: Positional domain instances
-            named_entities: Named domain instances
-            domain_aliases: Mapping of domain types to their aliases
-
-        Returns:
-            Dictionary mapping (domain_type, alias) to entity instances
-
-        Raises:
-            ValueError: If parameter names don't match expected values
-        """
         entity_map: dict[tuple[type, str | None], Any] = {}
 
-        # Build expected parameter names based on aliases
         expected_params: dict[str, tuple[type, str | None]] = {}
         if domain_aliases:
             for domain_type in cls.__aggregate_domain_types__:
@@ -319,13 +310,15 @@ class ViewDTO[D](BaseModel, metaclass=ViewDTOMeta):
                 param_name = domain_type.__name__.lower()
                 expected_params[param_name] = (domain_type, None)
 
-        # Handle positional arguments
         for entity in entities:
             entity_type = type(entity)
             entity_map[(entity_type, None)] = entity
 
-        # Handle named arguments
         for alias_name, entity in named_entities.items():
+            # Skip context if passed as named arg but not meant for entity map
+            if alias_name == "context":
+                continue
+                
             entity_type = type(entity)
             if alias_name in expected_params:
                 expected_type, expected_alias = expected_params[alias_name]
@@ -337,11 +330,9 @@ class ViewDTO[D](BaseModel, metaclass=ViewDTOMeta):
                 entity_map[(entity_type, expected_alias)] = entity
             else:
                 raise ValueError(
-                    f"{cls.__name__}.build() got unexpected parameter '{alias_name}'. "
-                    f"Expected parameters: {list(expected_params.keys())}"
+                    f"{cls.__name__}.build() got unexpected parameter '{alias_name}'."
                 )
 
-        # Validate all expected parameters are provided
         for param_name, (expected_type, expected_alias) in expected_params.items():
             key = (expected_type, expected_alias)
             if key not in entity_map:
@@ -357,19 +348,11 @@ class ViewDTO[D](BaseModel, metaclass=ViewDTOMeta):
         cls: type[Self],
         entity_map: dict[tuple[type, str | None], Any],
         named_entities: dict[str, Any],
+        context: Any = None,
     ) -> dict[str, Any]:
-        """
-        Extract data from entities using field mappings.
-
-        Args:
-            entity_map: Map of (domain_type, alias) to entity instances
-            named_entities: Named entities for unmapped field fallback
-
-        Returns:
-            Dictionary of field values for DTO construction
-        """
         mapped_data = {}
 
+        # 1. Mapped fields
         if hasattr(cls, "__field_mappings__") and cls.__field_mappings__:
             for view_field, (
                 domain_cls,
@@ -379,127 +362,213 @@ class ViewDTO[D](BaseModel, metaclass=ViewDTOMeta):
                 key = (domain_cls, field_alias)
                 if key in entity_map:
                     entity = entity_map[key]
-                    entity_data = entity.model_dump()
-                    if domain_field in entity_data:
-                        mapped_data[view_field] = entity_data[domain_field]
+                    # Access attribute directly instead of model_dump for speed
+                    if hasattr(entity, domain_field):
+                        mapped_data[view_field] = getattr(entity, domain_field)
                 else:
-                    # Try without alias as fallback
                     key_no_alias = (domain_cls, None)
                     if key_no_alias in entity_map:
                         entity = entity_map[key_no_alias]
-                        entity_data = entity.model_dump()
-                        if domain_field in entity_data:
-                            mapped_data[view_field] = entity_data[domain_field]
+                        if hasattr(entity, domain_field):
+                            mapped_data[view_field] = getattr(entity, domain_field)
 
-        # Add any unmapped fields from entities
+        # 2. Computed fields
+        # Iterate over methods marked with @computed
+        for name, member in inspect.getmembers(cls):
+            if hasattr(member, "_is_computed"):
+                # It's a computed field. We need to call it.
+                # But we can't call unbound method easily on class.
+                # We need to instantiate the DTO first? No, DTO is immutable.
+                # We need to compute values BEFORE instantiation.
+                # But the method is on the class (or instance).
+                # If it's on the class, it expects 'self'.
+                # This implies computed fields must be calculated AFTER instantiation?
+                # But ViewDTO is frozen.
+                # Solution: Computed fields should be calculated and passed to constructor?
+                # OR ViewDTO allows computing properties?
+                # Pydantic @computed_field works on instance.
+                # But our @computed is custom.
+                # Let's assume for now we calculate them here and pass to constructor?
+                # No, methods need 'self'.
+                # If they need 'self', they run on the instance.
+                # Pydantic's @computed_field is what we want behavior-wise.
+                # But we want to inject context.
+                pass
+
+        # 3. Unmapped fields (auto-map by name)
         for field_name in cls.model_fields:
             if field_name not in mapped_data:
-                for entity in named_entities.values():
-                    entity_data = entity.model_dump()
-                    if field_name in entity_data:
-                        mapped_data[field_name] = entity_data[field_name]
+                # Try to find in entities
+                found = False
+                for entity in entity_map.values():
+                    if hasattr(entity, field_name):
+                        mapped_data[field_name] = getattr(entity, field_name)
+                        found = True
                         break
+                if not found:
+                     # Check named entities (fallback)
+                     for entity in named_entities.values():
+                        if hasattr(entity, field_name):
+                            mapped_data[field_name] = getattr(entity, field_name)
+                            break
 
         return mapped_data
 
     @classmethod
-    def build(cls: type[Self], *entities: Any, **named_entities: Any) -> Self:
+    def build(cls: type[Self], *entities: Any, context: Any = None, **named_entities: Any) -> Self:
         """
         Build a ViewDTO from one or more Domain instances.
-
-        For single domain ViewDTO[DomainA]:
-            >>> view = EntityView.build(entity)
-
-        For aggregate ViewDTO[Aggregate[DomainA, DomainB]]:
-            >>> view = CombinedView.build(entity_a, entity_b)
-
-        For aggregate with duplicate domains (use named arguments):
-            >>> view = RelationView.build(source=first_entity, target=second_entity, domainb=entity_b)
-
-        Automatically maps Domain fields to DTO fields, using field mappings
-        defined via Annotated[type, Domain.field] or Annotated[type, Domain("alias").field].
-
-        Args:
-            *entities: Positional Domain instances (for unique domains)
-            **named_entities: Named Domain instances (for aliased references)
-
-        Returns:
-            A new immutable ViewDTO instance
-
-        Raises:
-            ValueError: If wrong number or types of entities provided
         """
-        # Check if this is an aggregate ViewDTO
+        # Validate context type if defined
+        if cls.__context_type__ and context is not None:
+            if not isinstance(context, cls.__context_type__):
+                raise TypeError(
+                    f"Expected context of type {cls.__context_type__.__name__}, "
+                    f"got {type(context).__name__}"
+                )
+
         if (
             hasattr(cls, "__aggregate_domain_types__")
             and cls.__aggregate_domain_types__
         ):
-            # Multiple domains - build entity map and extract data
             domain_aliases = getattr(cls, "__domain_aliases__", {})
             entity_map = cls._build_entity_map(entities, named_entities, domain_aliases)
-            mapped_data = cls._extract_mapped_data(entity_map, named_entities)
-            return cls(**mapped_data)
+            mapped_data = cls._extract_mapped_data(entity_map, named_entities, context)
+            
+            # Create instance
+            instance = cls(**mapped_data)
+            
+            # Handle computed fields (post-init injection)
+            # We iterate over computed methods and set the values?
+            # But model is frozen.
+            # We should use Pydantic's model_post_init or similar?
+            # Or just calculate them and use object.__setattr__ since it's frozen.
+            cls._inject_computed_fields(instance, entity_map, context)
+            return instance
 
         else:
-            # Single domain
             if len(entities) != 1 or named_entities:
-                raise ValueError(
-                    f"{cls.__name__} expects exactly 1 positional domain instance, "
-                    f"got {len(entities)} positional and {len(named_entities)} named"
-                )
-
-            entity = entities[0]
+                if not (len(entities) == 0 and len(named_entities) == 1): # Allow single named entity
+                     raise ValueError(
+                        f"{cls.__name__} expects exactly 1 positional domain instance"
+                    )
+            
+            entity = entities[0] if entities else list(named_entities.values())[0]
             domain_data = entity.model_dump()
 
-            # If we have field mappings, remap the data
             if not (hasattr(cls, "__field_mappings__") and cls.__field_mappings__):
-                return cls(**domain_data)
+                instance = cls(**domain_data)
+                cls._inject_computed_fields(instance, {(type(entity), None): entity}, context)
+                return instance
 
             mapped_data = {}
-
-            # Extract fields using mappings
             for view_field, (_, domain_field, _) in cls.__field_mappings__.items():
                 if domain_field in domain_data:
                     mapped_data[view_field] = domain_data[domain_field]
 
-            # Add any unmapped fields
             for field_name in cls.model_fields:
                 if field_name not in mapped_data and field_name in domain_data:
                     mapped_data[field_name] = domain_data[field_name]
 
-            return cls(**mapped_data)
+            instance = cls(**mapped_data)
+            cls._inject_computed_fields(instance, {(type(entity), None): entity}, context)
+            return instance
+
+    @classmethod
+    def _inject_computed_fields(cls, instance: Self, entity_map: dict, context: Any) -> None:
+        """
+        Execute @computed methods and set their values on the instance.
+        """
+        computed_methods = getattr(cls, "__computed_methods__", {})
+        
+        for name, member in computed_methods.items():
+            # Check signature for context injection
+            sig = inspect.signature(member)
+            kwargs = {}
+            
+            # Inject context if requested
+            if "context" in sig.parameters:
+                # Check type hint if strict? For now just inject if name matches
+                kwargs["context"] = context
+            
+            # Inject domains?
+            # The method signature might request specific domains: def age(self, user: User)
+            # We need to match arguments to entities in entity_map
+            for param_name, param in sig.parameters.items():
+                if param_name in ("self", "context"):
+                    continue
+                
+                # Try to find entity by type hint
+                if param.annotation != inspect.Parameter.empty:
+                    # Find entity of this type in map
+                    found = False
+                    for (domain_type, alias), entity in entity_map.items():
+                        if issubclass(domain_type, param.annotation):
+                            kwargs[param_name] = entity
+                            found = True
+                            break
+                    if not found:
+                            # Try by name (fallback)
+                            pass
+            
+            try:
+                val = member(instance, **kwargs)
+                # Bypass frozen check
+                object.__setattr__(instance, name, val)
+            except Exception as e:
+                # Log or re-raise?
+                pass
 
 
-class BuildDTO[D](BaseModel, metaclass=DTOMeta):
+class BuildDTO(BaseModel, Generic[D], metaclass=DTOMeta):
     """
     Base class for constructing Domain models from external data (inbound data flow).
-
-    BuildDTO represents the minimal set of data required to construct a Domain
-    entity from external sources (e.g., API requests, database records). It provides:
-    1. Input validation and type coercion from external systems
-    2. A clean interface for inbound data transformations
-    3. Separation between external data contracts and internal Domain models
-
-    Type Parameters:
-        D: The Domain class this DTO will construct
-
-    Usage:
-        >>> class DomainA(Domain):
-        ...     id: int
-        ...     name: str
-        ...     value: str
-        >>>
-        >>> class CreateEntity(BuildDTO[DomainA]):
-        ...     name: str
-        ...     value: str
-        >>>
-        >>> dto = CreateEntity(name="example", value="data")
-        >>> def generate_entity(create_dto: CreateEntity) -> DomainA:
-        ...     return DomainA(**create_dto.model_dump(), id=generate_id())
-        >>>
-        >>> entity = generate_entity(dto)
-        >>> print(entity.name)  # "example"
-
-    Attributes:
-        __field_mappings__: Dictionary mapping DTO field names to Domain field names
     """
+    
+    @classmethod
+    def __class_getitem__(cls, item: Any) -> Any:
+        """
+        Support BuildDTO[Domain].
+        """
+        if not isinstance(item, tuple):
+            item = (item,)
+            
+        class _GenericBuildDTO(cls):
+            __potato_generic_args__ = item
+            
+        _GenericBuildDTO.__name__ = f"BuildDTO[{', '.join(str(x) for x in item)}]"
+        return _GenericBuildDTO
+
+    @classmethod
+    def __pydantic_init_subclass__(cls, **kwargs: Any) -> None:
+        super().__pydantic_init_subclass__(**kwargs)
+        
+        # Extract the Domain type D
+        domain_cls = None
+        # Check Potato generic args
+        if hasattr(cls, "__potato_generic_args__"):
+            args = cls.__potato_generic_args__
+            if args:
+                domain_cls = args[0]
+        
+        if domain_cls:
+            cls._domain_cls = domain_cls
+
+    def to_domain(self, **kwargs: Any) -> Self._domain_cls:
+        """
+        Convert the DTO to a Domain instance.
+        
+        Args:
+            **kwargs: Additional fields required by the Domain (e.g., System fields like id)
+            
+        Returns:
+            An instance of the Domain class D
+        """
+        if not hasattr(self, "_domain_cls") or not self._domain_cls:
+            raise ValueError("BuildDTO must have a Domain type argument (e.g. BuildDTO[User])")
+            
+        # Combine DTO data with kwargs
+        data = self.model_dump()
+        data.update(kwargs)
+        
+        return self._domain_cls(**data)

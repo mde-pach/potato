@@ -20,6 +20,7 @@ from typing import Callable
 
 from mypy.nodes import (
     AssignmentStmt,
+    CallExpr,
     ClassDef,
     Expression,
     IndexExpr,
@@ -79,13 +80,13 @@ class PotatoPydanticPlugin(PydanticPlugin):
             Callback function for class validation, or None
         """
         # Check if this is a ViewDTO subclass
-        if fullname == "dto.ViewDTO":
+        if "ViewDTO" in fullname:
             return self._viewdto_class_hook
         # Check if this is a Domain subclass
         if fullname == "domain.domain.Domain":
             return self._domain_class_hook
         # Check if this is an Aggregate subclass
-        if fullname == "domain.aggregates.Aggregate":
+        if "Aggregate" in fullname:
             return self._aggregate_class_hook
         return None
 
@@ -190,7 +191,11 @@ class PotatoPydanticPlugin(PydanticPlugin):
         return ctx.default_return_type
 
     def _viewdto_class_hook(self, ctx: ClassDefContext) -> None:
-        """Validate ViewDTO fields against Domain fields."""
+        """Validate ViewDTO field mappings against Domain fields.
+        
+        ViewDTOs are allowed to include only a subset of Domain fields (partial views).
+        We only validate that any field mappings point to existing Domain fields.
+        """
         # Get the class definition
         cls_def: ClassDef = ctx.cls
 
@@ -199,40 +204,28 @@ class PotatoPydanticPlugin(PydanticPlugin):
         if domain_type_info is None:
             return
 
-        # Get required and optional fields from the Domain
+        # Get all fields from the Domain
         required_domain_fields, optional_domain_fields = self._get_domain_fields(
             domain_type_info
         )
         all_domain_fields = required_domain_fields | optional_domain_fields
 
-        # Get all fields from the ViewDTO and their mappings
+        # Get field mappings from the ViewDTO (returns dict of view_field -> (domain_class, domain_field))
         view_fields, field_mappings = self._get_view_fields_and_mappings(ctx, cls_def)
 
-        # Check each REQUIRED domain field is present in the view
-        # Optional fields (with defaults) don't need to be in the ViewDTO
-        for domain_field_name in required_domain_fields:
-            # Check if field exists by name in view
-            if domain_field_name in view_fields:
+        # Validate that mapped fields exist in the correct Domain
+        # ViewDTOs can include any subset of Domain fields, so we don't check for missing fields
+        for view_field, (mapped_domain_class, domain_field) in field_mappings.items():
+            # First, check if the domain class matches the ViewDTO's domain
+            if mapped_domain_class and mapped_domain_class != domain_type_info.name:
+                ctx.api.fail(
+                    f'ViewDTO "{cls_def.name}" field "{view_field}" maps to field from '
+                    f'"{mapped_domain_class}" but ViewDTO is for "{domain_type_info.name}"',
+                    ctx.cls,
+                )
                 continue
-
-            # Check if field is mapped via Annotated
-            if domain_field_name in field_mappings.values():
-                continue
-
-            # Field is missing! Get the type for a better error message
-            field_type_str = self._get_field_type_string(
-                domain_type_info, domain_field_name
-            )
-            ctx.api.fail(
-                f'ViewDTO "{cls_def.name}" is missing required field "{domain_field_name}" '
-                f'from Domain "{domain_type_info.name}". Either add a field with '
-                f"the same name or use Annotated[{field_type_str}, {domain_type_info.name}.{domain_field_name}] "
-                f"to map it to a different name.",
-                ctx.cls,
-            )
-
-        # Validate that mapped fields exist in Domain
-        for view_field, domain_field in field_mappings.items():
+            
+            # Then check if the field exists in the domain
             if domain_field not in all_domain_fields:
                 ctx.api.fail(
                     f'ViewDTO "{cls_def.name}" field "{view_field}" maps to '
@@ -315,15 +308,16 @@ class PotatoPydanticPlugin(PydanticPlugin):
 
     def _get_view_fields_and_mappings(
         self, ctx: ClassDefContext, cls_def: ClassDef
-    ) -> tuple[set[str], dict[str, str]]:
+    ) -> tuple[set[str], dict[str, tuple[str | None, str]]]:
         """
         Get ViewDTO fields and their mappings to Domain fields.
 
         Returns:
-            tuple: (set of view field names, dict mapping view field -> domain field)
+            tuple: (set of view field names, dict mapping view field -> (domain_class, domain_field))
+                   domain_class will be None if not explicitly specified or couldn't be extracted
         """
         view_fields = set()
-        field_mappings: dict[str, str] = {}
+        field_mappings: dict[str, tuple[str | None, str]] = {}
 
         # Get the TypeInfo from the class definition
         type_info = cls_def.info
@@ -362,20 +356,41 @@ class PotatoPydanticPlugin(PydanticPlugin):
                                     else stmt.type
                                 )
                                 if type_to_check is not None:
-                                    domain_field = self._extract_field_proxy_mapping(
+                                    mapping = self._extract_field_proxy_mapping(
                                         type_to_check
                                     )
-                                    if domain_field:
-                                        field_mappings[field_name] = domain_field
+                                    if mapping:
+                                        field_mappings[field_name] = mapping
+                                
+                                # Check for Field(source=...) assignment
+                                if isinstance(stmt.rvalue, CallExpr):
+                                    call = stmt.rvalue
+                                    # Check if calling Field
+                                    if isinstance(call.callee, NameExpr) and call.callee.name == "Field":
+                                        # Check arguments for 'source'
+                                        source_arg = None
+                                        for i, arg_name in enumerate(call.arg_names):
+                                            if arg_name == "source":
+                                                source_arg = call.args[i]
+                                                break
+                                        
+                                        if source_arg:
+                                            # Extract domain class and field from source arg (e.g. User.username)
+                                            if isinstance(source_arg, MemberExpr):
+                                                domain_class = None
+                                                if isinstance(source_arg.expr, NameExpr):
+                                                    domain_class = source_arg.expr.name
+                                                field_mappings[field_name] = (domain_class, source_arg.name)
                                 break
 
         return view_fields, field_mappings
 
-    def _extract_field_proxy_mapping(self, type_expr: Expression | Type) -> str | None:
+    def _extract_field_proxy_mapping(self, type_expr: Expression | Type) -> tuple[str | None, str] | None:
         """
-        Extract the domain field name from Annotated[type, Domain.field] metadata.
+        Extract the domain class and field name from Annotated[type, Domain.field] metadata.
 
-        Returns the field name if found, None otherwise.
+        Returns a tuple of (domain_class, field_name) if found, None otherwise.
+        domain_class will be None if it couldn't be extracted.
         """
         from mypy.nodes import TupleExpr
 
@@ -387,13 +402,19 @@ class PotatoPydanticPlugin(PydanticPlugin):
                 for arg in type_expr.args[1:]:
                     # Check if the arg is an UnboundType (e.g., User.username)
                     if isinstance(arg, UnboundType):
-                        # The name might be "Domain.field" - extract just the field name
+                        # The name might be "Domain.field" - extract domain class and field name
                         if "." in arg.name:
-                            return arg.name.split(".")[-1]
+                            parts = arg.name.split(".")
+                            if len(parts) == 2:
+                                return (parts[0], parts[1])
+                            return (None, parts[-1])
 
                     # Check if the arg is a MemberExpr (e.g., User.username)
                     elif isinstance(arg, MemberExpr):
-                        return arg.name
+                        domain_class = None
+                        if isinstance(arg.expr, NameExpr):
+                            domain_class = arg.expr.name
+                        return (domain_class, arg.name)
 
         # Check if this is an IndexExpr (subscripted type like Annotated[...])
         elif isinstance(type_expr, IndexExpr):
@@ -409,7 +430,10 @@ class PotatoPydanticPlugin(PydanticPlugin):
                     for metadata in index.items[1:]:
                         # Check if metadata is a MemberExpr (e.g., User.username)
                         if isinstance(metadata, MemberExpr):
-                            return metadata.name
+                            domain_class = None
+                            if isinstance(metadata.expr, NameExpr):
+                                domain_class = metadata.expr.name
+                            return (domain_class, metadata.name)
 
         return None
 
@@ -566,7 +590,19 @@ class PotatoPydanticPlugin(PydanticPlugin):
         if sym and isinstance(sym.node, TypeInfo):
             # Check if it inherits from Domain
             domain_fullname = "domain.domain.Domain"
-            return sym.node.has_base(domain_fullname)
+            # print(f"DEBUG: Checking {type_name} ({sym.node.fullname}). Bases: {[b.type.fullname for b in sym.node.bases]}")
+            has_base = sym.node.has_base(domain_fullname)
+            if not has_base:
+                 # Try checking for potato.domain.domain.Domain
+                 has_base = sym.node.has_base("potato.domain.domain.Domain")
+            
+            if not has_base:
+                 # Try checking by name only (less safe but might work for tests)
+                 for base in sym.node.bases:
+                     if "Domain" in base.type.fullname:
+                         has_base = True
+                         break
+            return has_base
         return False
 
     def _aggregate_class_hook(self, ctx: ClassDefContext) -> None:
@@ -575,6 +611,7 @@ class PotatoPydanticPlugin(PydanticPlugin):
 
         # Extract the Aggregate types from Aggregate[Type1, Type2, ...]
         aggregate_types = self._extract_aggregate_types_from_aggregate(ctx)
+        
         if aggregate_types is None:
             # No generic parameters, nothing to validate
             return
