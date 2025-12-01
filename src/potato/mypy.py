@@ -192,7 +192,7 @@ class PotatoPydanticPlugin(PydanticPlugin):
 
     def _viewdto_class_hook(self, ctx: ClassDefContext) -> None:
         """Validate ViewDTO field mappings against Domain fields.
-        
+
         ViewDTOs are allowed to include only a subset of Domain fields (partial views).
         We only validate that any field mappings point to existing Domain fields.
         """
@@ -204,33 +204,58 @@ class PotatoPydanticPlugin(PydanticPlugin):
         if domain_type_info is None:
             return
 
-        # Get all fields from the Domain
-        required_domain_fields, optional_domain_fields = self._get_domain_fields(
-            domain_type_info
-        )
-        all_domain_fields = required_domain_fields | optional_domain_fields
+        # Check if the domain is an Aggregate
+        is_aggregate = self._is_aggregate_type(domain_type_info)
+        aggregate_domain_types = set()
+        if is_aggregate:
+            aggregate_domain_types = self._extract_aggregate_domain_types(domain_type_info, ctx)
+
+        # Get all fields from the Domain(s)
+        if is_aggregate:
+            # For aggregates, collect fields from all domain types
+            all_domain_fields = set()
+            for domain_type_name in aggregate_domain_types:
+                sym = ctx.api.lookup_qualified(domain_type_name, ctx.cls)
+                if sym:
+                    type_info = self._resolve_type_info(sym.node)
+                    if type_info:
+                        required_fields, optional_fields = self._get_domain_fields(type_info)
+                        all_domain_fields.update(required_fields | optional_fields)
+        else:
+            # For regular domains, get fields from the single domain
+            required_domain_fields, optional_domain_fields = self._get_domain_fields(
+                domain_type_info
+            )
+            all_domain_fields = required_domain_fields | optional_domain_fields
 
         # Get field mappings from the ViewDTO (returns dict of view_field -> (domain_class, domain_field))
-        view_fields, field_mappings = self._get_view_fields_and_mappings(ctx, cls_def)
+        view_fields, field_mappings, field_ast_nodes = self._get_view_fields_and_mappings(ctx, cls_def)
 
         # Validate that mapped fields exist in the correct Domain
         # ViewDTOs can include any subset of Domain fields, so we don't check for missing fields
         for view_field, (mapped_domain_class, domain_field) in field_mappings.items():
-            # First, check if the domain class matches the ViewDTO's domain
-            if mapped_domain_class and mapped_domain_class != domain_type_info.name:
-                ctx.api.fail(
-                    f'ViewDTO "{cls_def.name}" field "{view_field}" maps to field from '
-                    f'"{mapped_domain_class}" but ViewDTO is for "{domain_type_info.name}"',
-                    ctx.cls,
-                )
-                continue
-            
-            # Then check if the field exists in the domain
+            # Get the AST node for this field to report errors on the specific field
+            field_node = field_ast_nodes.get(view_field)
+
+            # First, check if the domain class matches the ViewDTO's domain(s)
+            if mapped_domain_class:
+                allowed_domain_names = aggregate_domain_types if is_aggregate else {domain_type_info.name}
+                if mapped_domain_class not in allowed_domain_names:
+                    domain_description = f"Aggregate[{', '.join(aggregate_domain_types)}]" if is_aggregate else domain_type_info.name
+                    ctx.api.fail(
+                        f'ViewDTO "{cls_def.name}" field "{view_field}" maps to field from '
+                        f'"{mapped_domain_class}" but ViewDTO is for "{domain_description}"',
+                        field_node if field_node else ctx.cls,
+                    )
+                    continue
+
+            # Then check if the field exists in the domain(s)
             if domain_field not in all_domain_fields:
+                domain_description = f"Aggregate[{', '.join(aggregate_domain_types)}]" if is_aggregate else domain_type_info.name
                 ctx.api.fail(
                     f'ViewDTO "{cls_def.name}" field "{view_field}" maps to '
-                    f'non-existent Domain field "{domain_field}" in "{domain_type_info.name}"',
-                    ctx.cls,
+                    f'non-existent Domain field "{domain_field}" in "{domain_description}"',
+                    field_node if field_node else ctx.cls,
                 )
 
     def _extract_domain_type(self, ctx: ClassDefContext) -> TypeInfo | None:
@@ -250,6 +275,59 @@ class PotatoPydanticPlugin(PydanticPlugin):
                         if sym and isinstance(sym.node, TypeInfo):
                             return sym.node
         return None
+
+    def _is_aggregate_type(self, type_info: TypeInfo) -> bool:
+        """Check if a TypeInfo represents an Aggregate class."""
+        # Check if it has Aggregate in its bases
+        for base in type_info.bases:
+            if "Aggregate" in base.type.fullname:
+                return True
+        return False
+
+    def _resolve_type_info(self, sym_node) -> TypeInfo | None:
+        """Resolve a symbol node to its underlying TypeInfo, handling aliases."""
+        from mypy.nodes import TypeAlias
+        from mypy.types import Instance
+
+        if isinstance(sym_node, TypeInfo):
+            return sym_node
+        elif isinstance(sym_node, TypeAlias):
+            # For aliases, get the target type
+            if isinstance(sym_node.target, Instance):
+                return sym_node.target.type
+        return None
+
+    def _extract_aggregate_domain_types(self, aggregate_type_info: TypeInfo, ctx: ClassDefContext) -> set[str]:
+        """
+        Extract all Domain types from an Aggregate class.
+
+        For Aggregate[User, Product], returns {'User', 'Product'}.
+        """
+        domain_types = set()
+
+        # We need to look at the original AST base_type_exprs, not the resolved bases
+        # But we don't have access to the Aggregate class's AST directly.
+        # Instead, we can look at the aggregate_type_info's defn (definition) if available
+        if aggregate_type_info.defn:
+            for base_expr in aggregate_type_info.defn.base_type_exprs:
+                if isinstance(base_expr, IndexExpr):
+                    base = base_expr.base
+                    if isinstance(base, NameExpr) and base.name == "Aggregate":
+                        # Extract the types from Aggregate[Type1, Type2, ...]
+                        index = base_expr.index
+
+                        # Handle tuple of types
+                        from mypy.nodes import TupleExpr
+
+                        if isinstance(index, TupleExpr):
+                            for item in index.items:
+                                if isinstance(item, NameExpr):
+                                    domain_types.add(item.name)
+                        # Handle single type
+                        elif isinstance(index, NameExpr):
+                            domain_types.add(index.name)
+
+        return domain_types
 
     def _get_domain_fields(
         self, domain_type_info: TypeInfo
@@ -308,16 +386,17 @@ class PotatoPydanticPlugin(PydanticPlugin):
 
     def _get_view_fields_and_mappings(
         self, ctx: ClassDefContext, cls_def: ClassDef
-    ) -> tuple[set[str], dict[str, tuple[str | None, str]]]:
+    ) -> tuple[set[str], dict[str, tuple[str | None, str]], dict[str, AssignmentStmt]]:
         """
         Get ViewDTO fields and their mappings to Domain fields.
 
         Returns:
-            tuple: (set of view field names, dict mapping view field -> (domain_class, domain_field))
+            tuple: (set of view field names, dict mapping view field -> (domain_class, domain_field), dict mapping view field -> AST node)
                    domain_class will be None if not explicitly specified or couldn't be extracted
         """
         view_fields = set()
         field_mappings: dict[str, tuple[str | None, str]] = {}
+        field_ast_nodes: dict[str, AssignmentStmt] = {}
 
         # Get the TypeInfo from the class definition
         type_info = cls_def.info
@@ -355,13 +434,16 @@ class PotatoPydanticPlugin(PydanticPlugin):
                                     if stmt.unanalyzed_type is not None
                                     else stmt.type
                                 )
+                                # Store the AST node for this field
+                                field_ast_nodes[field_name] = stmt
+
                                 if type_to_check is not None:
                                     mapping = self._extract_field_proxy_mapping(
                                         type_to_check
                                     )
                                     if mapping:
                                         field_mappings[field_name] = mapping
-                                
+
                                 # Check for Field(source=...) assignment
                                 if isinstance(stmt.rvalue, CallExpr):
                                     call = stmt.rvalue
@@ -373,7 +455,7 @@ class PotatoPydanticPlugin(PydanticPlugin):
                                             if arg_name == "source":
                                                 source_arg = call.args[i]
                                                 break
-                                        
+
                                         if source_arg:
                                             # Extract domain class and field from source arg (e.g. User.username)
                                             if isinstance(source_arg, MemberExpr):
@@ -383,7 +465,7 @@ class PotatoPydanticPlugin(PydanticPlugin):
                                                 field_mappings[field_name] = (domain_class, source_arg.name)
                                 break
 
-        return view_fields, field_mappings
+        return view_fields, field_mappings, field_ast_nodes
 
     def _extract_field_proxy_mapping(self, type_expr: Expression | Type) -> tuple[str | None, str] | None:
         """

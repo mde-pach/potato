@@ -1,14 +1,3 @@
-"""
-DTO module - Data Transfer Objects for unidirectional data flow.
-
-This module provides ViewDTO and BuildDTO base classes that enable type-safe
-data transformations between Domain models and external representations.
-
-The DTOs enforce a unidirectional data flow:
-- BuildDTO: External data → Domain (inbound)
-- ViewDTO: Domain → External data (outbound)
-"""
-
 import inspect
 from typing import (
     TYPE_CHECKING,
@@ -16,53 +5,25 @@ from typing import (
     Any,
     ClassVar,
     Self,
-    dataclass_transform,
     get_args,
     get_origin,
     get_type_hints,
     Generic,
-    TypeVar,
 )
 
 from pydantic import BaseModel, ConfigDict, Field as PydanticField
-from pydantic._internal._model_construction import (
-    ModelMetaclass,
-    NoInitField,
-    PydanticModelField,
-    PydanticModelPrivateAttr,
-)
 
-from potato.core import Field, SystemMarker
+from potato.core import Field
+from .base import DTOMeta, D, C
 
 if TYPE_CHECKING:
     from potato.domain import FieldProxy
 else:
-    from potato.domain import FieldProxy
-
-D = TypeVar("D")
-C = TypeVar("C", default=None)
-
-@dataclass_transform(
-    kw_only_default=True,
-    field_specifiers=(PydanticModelField, NoInitField, PydanticModelPrivateAttr),
-)
-class DTOMeta(ModelMetaclass):
-    """
-    Base metaclass for DTO classes.
-
-    Extends Pydantic's ModelMetaclass to support generic Domain type parameters.
-    """
-
-    def __new__(
-        mcs: type,
-        name: str,
-        bases: tuple[type, ...],
-        namespace: dict[str, Any],
-        **kwargs: Any,
-    ) -> type:
-        cls = super().__new__(mcs, name, bases, namespace, **kwargs)  # type: ignore
-        return cls
-
+    try:
+        from potato.domain import FieldProxy
+    except ImportError:
+        # Handle circular import if necessary, or just let it fail if it's a hard dependency
+        FieldProxy = Any
 
 class ViewDTOMeta(DTOMeta):
     """
@@ -81,7 +42,8 @@ class ViewDTOMeta(DTOMeta):
         computed_methods = {}
         
         for k, v in namespace.items():
-            if isinstance(v, Field):
+            # mypy thinks this is a Callable but it's a class at runtime
+            if isinstance(v, Field): # type: ignore
                 potato_fields[k] = v
                 if v.pydantic_kwargs:
                     namespace[k] = PydanticField(**v.pydantic_kwargs)
@@ -206,8 +168,8 @@ class ViewDTOMeta(DTOMeta):
     @staticmethod
     def _validate_aliases(
         cls: type,
-        domain_aliases: dict[FieldProxy, list[FieldProxy | None]],
-        field_mappings: dict[str, tuple[FieldProxy, str, FieldProxy | None]],
+        domain_aliases: dict[Any, list[Any | None]],
+        field_mappings: dict[str, tuple[Any, str, Any | None]],
     ) -> None:
         """
         Validate that field references use aliases declared in Aggregate.
@@ -376,23 +338,6 @@ class ViewDTO(BaseModel, Generic[D, C], metaclass=ViewDTOMeta):
         # Iterate over methods marked with @computed
         for name, member in inspect.getmembers(cls):
             if hasattr(member, "_is_computed"):
-                # It's a computed field. We need to call it.
-                # But we can't call unbound method easily on class.
-                # We need to instantiate the DTO first? No, DTO is immutable.
-                # We need to compute values BEFORE instantiation.
-                # But the method is on the class (or instance).
-                # If it's on the class, it expects 'self'.
-                # This implies computed fields must be calculated AFTER instantiation?
-                # But ViewDTO is frozen.
-                # Solution: Computed fields should be calculated and passed to constructor?
-                # OR ViewDTO allows computing properties?
-                # Pydantic @computed_field works on instance.
-                # But our @computed is custom.
-                # Let's assume for now we calculate them here and pass to constructor?
-                # No, methods need 'self'.
-                # If they need 'self', they run on the instance.
-                # Pydantic's @computed_field is what we want behavior-wise.
-                # But we want to inject context.
                 pass
 
         # 3. Unmapped fields (auto-map by name)
@@ -439,10 +384,6 @@ class ViewDTO(BaseModel, Generic[D, C], metaclass=ViewDTOMeta):
             instance = cls(**mapped_data)
             
             # Handle computed fields (post-init injection)
-            # We iterate over computed methods and set the values?
-            # But model is frozen.
-            # We should use Pydantic's model_post_init or similar?
-            # Or just calculate them and use object.__setattr__ since it's frozen.
             cls._inject_computed_fields(instance, entity_map, context)
             return instance
 
@@ -518,57 +459,3 @@ class ViewDTO(BaseModel, Generic[D, C], metaclass=ViewDTOMeta):
             except Exception as e:
                 # Log or re-raise?
                 pass
-
-
-class BuildDTO(BaseModel, Generic[D], metaclass=DTOMeta):
-    """
-    Base class for constructing Domain models from external data (inbound data flow).
-    """
-    
-    @classmethod
-    def __class_getitem__(cls, item: Any) -> Any:
-        """
-        Support BuildDTO[Domain].
-        """
-        if not isinstance(item, tuple):
-            item = (item,)
-            
-        class _GenericBuildDTO(cls):
-            __potato_generic_args__ = item
-            
-        _GenericBuildDTO.__name__ = f"BuildDTO[{', '.join(str(x) for x in item)}]"
-        return _GenericBuildDTO
-
-    @classmethod
-    def __pydantic_init_subclass__(cls, **kwargs: Any) -> None:
-        super().__pydantic_init_subclass__(**kwargs)
-        
-        # Extract the Domain type D
-        domain_cls = None
-        # Check Potato generic args
-        if hasattr(cls, "__potato_generic_args__"):
-            args = cls.__potato_generic_args__
-            if args:
-                domain_cls = args[0]
-        
-        if domain_cls:
-            cls._domain_cls = domain_cls
-
-    def to_domain(self, **kwargs: Any) -> Self._domain_cls:
-        """
-        Convert the DTO to a Domain instance.
-        
-        Args:
-            **kwargs: Additional fields required by the Domain (e.g., System fields like id)
-            
-        Returns:
-            An instance of the Domain class D
-        """
-        if not hasattr(self, "_domain_cls") or not self._domain_cls:
-            raise ValueError("BuildDTO must have a Domain type argument (e.g. BuildDTO[User])")
-            
-        # Combine DTO data with kwargs
-        data = self.model_dump()
-        data.update(kwargs)
-        
-        return self._domain_cls(**data)

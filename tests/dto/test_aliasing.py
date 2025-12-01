@@ -20,6 +20,12 @@ from ..fixtures.domains import Buyer, Product, Seller, User
 class Order(Aggregate[Buyer, Seller, Product]):
     pass
 
+class Test(ViewDTO[Order]):
+    test_id: Annotated[int, Buyer.id]
+    test_name: Annotated[str, Product.name]
+    test_description: Annotated[str, Product.description]
+    test: Annotated[int, Seller.email]
+
 
 class OrderView(ViewDTO[Order]):
     """ViewDTO with aliased domains for buyer and seller."""

@@ -20,4 +20,10 @@ plugins = ["potato.mypy"]
 mypy_path = "$MYPY_CONFIG_FILE_DIR"
 
 [dependency-groups]
-dev = ["pytest>=9.0.1", "pytest-cov>=6.0.0", "mkdocs>=1.6.0", "mkdocs-material>=9.5.0", "mkdocstrings[python]>=0.25.0"]
+dev = [
+    "pytest>=9.0.1",
+    "pytest-cov>=6.0.0",
+    "mkdocs>=1.6.0",
+    "mkdocs-material>=9.5.0",
+    "mkdocstrings[python]>=0.25.0",
+]

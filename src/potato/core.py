@@ -1,4 +1,4 @@
-from typing import Annotated, Any, Callable, TypeVar, TYPE_CHECKING
+from typing import Annotated, Any, Callable, TypeVar, TYPE_CHECKING, TypeAlias
 
 T = TypeVar("T")
 
@@ -8,21 +8,7 @@ class SystemMarker:
     pass
 
 
-class _SystemAlias:
-    """
-    Helper to create System[T] types.
-    
-    Usage:
-        id: System[int]
-        
-    This resolves to Annotated[int, SystemMarker] which Pydantic handles gracefully,
-    while allowing Potato to identify system fields.
-    """
-    def __class_getitem__(cls, item):
-        return Annotated[item, SystemMarker]
-
-
-System = _SystemAlias
+System: TypeAlias = Annotated[T, SystemMarker]
 
 
 if TYPE_CHECKING:

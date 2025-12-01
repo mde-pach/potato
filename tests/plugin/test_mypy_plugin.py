@@ -42,6 +42,25 @@ class UserView(ViewDTO[User, UserContext]):
 """
     assert_mypy_output(code, expected_clean=True)
 
+def test_view_dto_automatic_field_mapping(assert_mypy_output):
+    code = """
+from potato import Domain, ViewDTO
+
+class User(Domain):
+    id: int
+    username: str
+    email: str
+    is_active: bool
+
+class UserView(ViewDTO[User]):
+    # All fields automatically mapped by name - no explicit Field() or Annotated needed
+    id: int
+    username: str
+    email: str
+    is_active: bool
+"""
+    assert_mypy_output(code, expected_clean=True)
+
 def test_view_dto_invalid_field_mapping(assert_mypy_output):
     code = """
 from potato import Domain, ViewDTO, Field
@@ -107,5 +126,54 @@ Buyer = User.alias("buyer")
 class MyAggregate(Aggregate[User, Buyer]):
     user: User
     buyer: Buyer
+"""
+    assert_mypy_output(code, expected_clean=True)
+
+def test_view_dto_inherited_domain(assert_mypy_output):
+    code = """
+from typing import Annotated
+from potato import Domain, ViewDTO, Aggregate
+
+class User(Domain):
+    name: str
+
+class Product(Domain):
+    name: str
+
+class Order(Aggregate[User, Product]):
+    amount: int
+
+class OrderView(ViewDTO[Order]):
+    product_name: Annotated[str, Product.name]
+"""
+    assert_mypy_output(code, expected_clean=True)
+
+def test_view_dto_inherited_domain_with_aliasing(assert_mypy_output):
+    code = """
+from typing import Annotated
+from potato import Domain, ViewDTO, Aggregate
+
+class User(Domain):
+    id: int
+    email: str
+    name: str
+
+class Product(Domain):
+    id: int
+    name: str
+    seller_id: int
+    buyer_id: int
+
+Buyer = User.alias("buyer")
+Seller = User.alias("seller")
+
+class Order(Aggregate[Buyer, Seller, Product]):
+    amount: int
+
+class OrderView(ViewDTO[Order]):
+    buyer_id: Annotated[int, Buyer.id]
+    buyer_email: Annotated[str, Buyer.email]
+    seller_id: Annotated[int, Seller.id]
+    seller_name: Annotated[str, Seller.name]
 """
     assert_mypy_output(code, expected_clean=True)

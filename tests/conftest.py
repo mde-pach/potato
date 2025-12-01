@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import os
 import tempfile
-from typing import List, Tuple
 
 import pytest
 from mypy import api
@@ -48,7 +47,7 @@ def run_mypy_on_code():
     Returns:
         A function that takes code and returns (stdout, stderr, exit_code).
     """
-    def _run(code: str) -> Tuple[str, str, int]:
+    def _run(code: str) -> tuple[str, str, int]:
         """Run mypy on a string of code."""
         with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as f:
             f.write(code)
@@ -95,7 +94,7 @@ def assert_mypy_output(run_mypy_on_code):
     Returns:
         A function that takes code and expected errors/clean flag and asserts.
     """
-    def _assert(code: str, expected_errors: List[str] = None, expected_clean: bool = False):
+    def _assert(code: str, expected_errors: list[str] | None = None, expected_clean: bool = False):
         """Assert that running mypy on the code produces the expected errors."""
         stdout, stderr, exit_code = run_mypy_on_code(code)
         
