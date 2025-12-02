@@ -1,29 +1,23 @@
 import inspect
 from typing import (
     TYPE_CHECKING,
-    Annotated,
     Any,
     ClassVar,
     Self,
-    get_args,
-    get_origin,
-    get_type_hints,
     Generic,
 )
 
 from pydantic import BaseModel, ConfigDict, Field as PydanticField
 
 from potato.core import Field
+from potato.types import FieldProxy
+from potato.introspection import (
+    extract_field_mappings,
+    validate_aliases,
+    get_aggregate_domain_types,
+)
 from .base import DTOMeta, D, C
 
-if TYPE_CHECKING:
-    from potato.domain import FieldProxy
-else:
-    try:
-        from potato.domain import FieldProxy
-    except ImportError:
-        # Handle circular import if necessary, or just let it fail if it's a hard dependency
-        FieldProxy = Any
 
 class ViewDTOMeta(DTOMeta):
     """
@@ -61,57 +55,18 @@ class ViewDTOMeta(DTOMeta):
         if computed_methods:
             cls.__computed_methods__ = computed_methods # type: ignore
 
-        alias: FieldProxy | None
-        
         # Extract aggregate domain types and context
-        domain_aliases: dict[FieldProxy, list[FieldProxy | None]] = {}
-        aggregate_domain_types: list[FieldProxy] = []
+        aggregate_domain_types, domain_aliases = get_aggregate_domain_types(cls)
+        
+        # Check for Context type in Potato generic args
         context_type = None
-
         for base in cls.__bases__:
-            # Check for Potato generic args (custom implementation)
             if hasattr(base, "__potato_generic_args__"):
                 args = base.__potato_generic_args__
-                if args:
-                    first_arg = args[0]
-                    
-                    # Check for Context type (second argument)
-                    if len(args) > 1:
-                        context_type = args[1]
+                if len(args) > 1:
+                    context_type = args[1]
+                    break
 
-                    # Check if first_arg is an Aggregate instance
-                    if hasattr(first_arg, "__aggregate_domain_types__"):
-                        aggregate_args = first_arg.__aggregate_domain_types__
-                    else:
-                        aggregate_origin = get_origin(first_arg)
-                        if aggregate_origin is not None:
-                            aggregate_args = get_args(first_arg)
-                        else:
-                            aggregate_args = None
-
-                    if aggregate_args:
-                        for domain_spec in aggregate_args:
-                            if hasattr(domain_spec, "_domain_cls") and hasattr(
-                                domain_spec, "_alias"
-                            ):
-                                domain_type = domain_spec._domain_cls
-                                alias = domain_spec._alias
-                            else:
-                                domain_type = domain_spec
-                                alias = None
-
-                            aggregate_domain_types.append(domain_type)
-
-                            if domain_type not in domain_aliases:
-                                domain_aliases[domain_type] = []
-                            domain_aliases[domain_type].append(alias)
-                        break
-            
-            # Fallback to Pydantic generic metadata (if we ever use standard Generic)
-            elif hasattr(base, "__pydantic_generic_metadata__"):
-                 # ... (existing logic if needed, but we are replacing it)
-                 pass
-        
         if context_type:
             cls.__context_type__ = context_type # type: ignore
 
@@ -120,96 +75,16 @@ class ViewDTOMeta(DTOMeta):
             cls.__domain_aliases__ = domain_aliases  # type: ignore
 
         # Extract field mappings: view_field -> (domain_class, domain_field, alias)
-        field_mappings: dict[str, tuple[type, str, str | None]] = {}
-        
-        # 1. Process Potato Fields (Field(source=...))
-        if hasattr(cls, "__potato_fields__"):
-            for field_name, field_def in cls.__potato_fields__.items(): # type: ignore
-                if field_def.source:
-                    # source should be a FieldProxy
-                    if isinstance(field_def.source, FieldProxy):
-                        field_mappings[field_name] = (
-                            field_def.source.model_cls,
-                            field_def.source.field_name,
-                            field_def.source.alias,
-                        )
-        
-        # 2. Process Annotated types (Legacy/Alternative)
-        try:
-            type_hints = get_type_hints(cls, include_extras=True)
-            for field_name, field_type in type_hints.items():
-                if field_name.startswith("_") or field_name in field_mappings:
-                    continue
-
-                origin = get_origin(field_type)
-                if origin is Annotated:
-                    args = get_args(field_type)
-                    for metadata in args[1:]:
-                        if isinstance(metadata, FieldProxy):
-                            field_mappings[field_name] = (
-                                metadata.model_cls,
-                                metadata.field_name,
-                                metadata.alias,
-                            )
-                            break
-        except Exception:
-            pass
+        field_mappings = extract_field_mappings(cls)
 
         if field_mappings:
             cls.__field_mappings__ = field_mappings  # type: ignore
 
         # Validate that field references use declared aliases
         if hasattr(cls, "__domain_aliases__") and field_mappings:
-            # TODO fix the type error here
-            ViewDTOMeta._validate_aliases(cls, domain_aliases, field_mappings)  # type: ignore
+            validate_aliases(cls, domain_aliases, field_mappings)  # type: ignore
 
         return cls
-
-    @staticmethod
-    def _validate_aliases(
-        cls: type,
-        domain_aliases: dict[Any, list[Any | None]],
-        field_mappings: dict[str, tuple[Any, str, Any | None]],
-    ) -> None:
-        """
-        Validate that field references use aliases declared in Aggregate.
-
-        Raises ValueError if a field uses an alias not declared in the Aggregate.
-        """
-        for view_field, (
-            domain_cls,
-            domain_field,
-            field_alias,
-        ) in field_mappings.items():
-            if domain_cls not in domain_aliases:
-                # Domain not in aggregate, skip validation
-                continue
-
-            declared_aliases = domain_aliases[domain_cls]
-
-            # If there's only one instance of this domain type, alias should be None
-            if len(declared_aliases) == 1 and declared_aliases[0] is None:
-                if field_alias is not None:
-                    raise ValueError(
-                        f"ViewDTO '{cls.__name__}' field '{view_field}' uses alias '{field_alias}' "
-                        f"but Domain '{domain_cls.__class__.__name__}' has no alias declared in Aggregate. "
-                        f"Remove the alias from the field reference."
-                    )
-            # If there are multiple instances, alias must be declared
-            elif len(declared_aliases) > 1:
-                if field_alias is None:
-                    raise ValueError(
-                        f"ViewDTO '{cls.__name__}' field '{view_field}' references Domain '{domain_cls.__class__.__name__}' "
-                        f"without an alias, but multiple instances are declared in Aggregate. "
-                        f'Use Annotated[type, {domain_cls.__class__.__name__}("alias").{domain_field}] '
-                        f"with one of the declared aliases: {[a for a in declared_aliases if a is not None]}"
-                    )
-                elif field_alias not in declared_aliases:
-                    raise ValueError(
-                        f"ViewDTO '{cls.__name__}' field '{view_field}' uses alias '{field_alias}' "
-                        f"which is not declared in Aggregate for Domain '{domain_cls.__class__.__name__}'. "
-                        f"Declared aliases: {[a for a in declared_aliases if a is not None]}"
-                    )
 
 
 class ViewDTO(BaseModel, Generic[D, C], metaclass=ViewDTOMeta):
