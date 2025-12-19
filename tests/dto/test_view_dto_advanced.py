@@ -1,8 +1,5 @@
-from typing import Annotated
-
-import pytest
 from potato import ViewDTO, Field, computed
-from tests.fixtures.domains import User
+from ..fixtures.domains import User
 
 class TestViewDTOAdvancedFeatures:
     """Tests for advanced ViewDTO features like Field(source=...) and Context."""
