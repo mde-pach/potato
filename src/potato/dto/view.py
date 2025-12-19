@@ -3,20 +3,22 @@ from typing import (
     TYPE_CHECKING,
     Any,
     ClassVar,
-    Self,
     Generic,
+    Self,
 )
 
-from pydantic import BaseModel, ConfigDict, Field as PydanticField
+from pydantic import BaseModel, ConfigDict
+from pydantic import Field as PydanticField
 
 from potato.core import Field
-from potato.types import FieldProxy
 from potato.introspection import (
     extract_field_mappings,
-    validate_aliases,
     get_aggregate_domain_types,
+    validate_aliases,
 )
-from .base import DTOMeta, D, C
+from potato.types import FieldProxy
+
+from .base import C, D, DTOMeta
 
 
 class ViewDTOMeta(DTOMeta):
@@ -34,10 +36,10 @@ class ViewDTOMeta(DTOMeta):
         # Pre-process namespace to handle Potato Fields and Computed Methods
         potato_fields = {}
         computed_methods = {}
-        
+
         for k, v in namespace.items():
             # mypy thinks this is a Callable but it's a class at runtime
-            if isinstance(v, Field): # type: ignore
+            if isinstance(v, Field):  # type: ignore
                 potato_fields[k] = v
                 if v.pydantic_kwargs:
                     namespace[k] = PydanticField(**v.pydantic_kwargs)
@@ -47,17 +49,17 @@ class ViewDTOMeta(DTOMeta):
                 computed_methods[k] = v
 
         cls = super().__new__(mcs, name, bases, namespace, **kwargs)
-        
+
         # Store potato fields and computed methods
         if potato_fields:
             cls.__potato_fields__ = potato_fields  # type: ignore
-            
+
         if computed_methods:
-            cls.__computed_methods__ = computed_methods # type: ignore
+            cls.__computed_methods__ = computed_methods  # type: ignore
 
         # Extract aggregate domain types and context
         aggregate_domain_types, domain_aliases = get_aggregate_domain_types(cls)
-        
+
         # Check for Context type in Potato generic args
         context_type = None
         for base in cls.__bases__:
@@ -68,7 +70,7 @@ class ViewDTOMeta(DTOMeta):
                     break
 
         if context_type:
-            cls.__context_type__ = context_type # type: ignore
+            cls.__context_type__ = context_type  # type: ignore
 
         if aggregate_domain_types:
             cls.__aggregate_domain_types__ = tuple(aggregate_domain_types)  # type: ignore
@@ -106,7 +108,7 @@ class ViewDTO(BaseModel, Generic[D, C], metaclass=ViewDTOMeta):
         frozen=True,
         from_attributes=True,
     )
-    
+
     @classmethod
     def __class_getitem__(cls, item: Any) -> Any:
         """
@@ -114,15 +116,15 @@ class ViewDTO(BaseModel, Generic[D, C], metaclass=ViewDTOMeta):
         """
         if not isinstance(item, tuple):
             item = (item,)
-            
+
         # Create a dynamic class that holds the generic args
         # This class will be the base of the user's DTO
-        class _GenericViewDTO(cls):
+        class _GenericViewDTO(cls):  # type: ignore
             __potato_generic_args__ = item
-            
+
             # We must pretend to be the original class for isinstance checks if needed
             # but for now this is enough for the metaclass to find args
-        
+
         _GenericViewDTO.__name__ = f"ViewDTO[{', '.join(str(x) for x in item)}]"
         return _GenericViewDTO
 
@@ -155,7 +157,7 @@ class ViewDTO(BaseModel, Generic[D, C], metaclass=ViewDTOMeta):
             # Skip context if passed as named arg but not meant for entity map
             if alias_name == "context":
                 continue
-                
+
             entity_type = type(entity)
             if alias_name in expected_params:
                 expected_type, expected_alias = expected_params[alias_name]
@@ -226,8 +228,8 @@ class ViewDTO(BaseModel, Generic[D, C], metaclass=ViewDTOMeta):
                         found = True
                         break
                 if not found:
-                     # Check named entities (fallback)
-                     for entity in named_entities.values():
+                    # Check named entities (fallback)
+                    for entity in named_entities.values():
                         if hasattr(entity, field_name):
                             mapped_data[field_name] = getattr(entity, field_name)
                             break
@@ -235,7 +237,9 @@ class ViewDTO(BaseModel, Generic[D, C], metaclass=ViewDTOMeta):
         return mapped_data
 
     @classmethod
-    def build(cls: type[Self], *entities: Any, context: Any = None, **named_entities: Any) -> Self:
+    def build(
+        cls: type[Self], *entities: Any, context: Any = None, **named_entities: Any
+    ) -> Self:
         """
         Build a ViewDTO from one or more Domain instances.
         """
@@ -254,27 +258,31 @@ class ViewDTO(BaseModel, Generic[D, C], metaclass=ViewDTOMeta):
             domain_aliases = getattr(cls, "__domain_aliases__", {})
             entity_map = cls._build_entity_map(entities, named_entities, domain_aliases)
             mapped_data = cls._extract_mapped_data(entity_map, named_entities, context)
-            
+
             # Create instance
             instance = cls(**mapped_data)
-            
+
             # Handle computed fields (post-init injection)
             cls._inject_computed_fields(instance, entity_map, context)
             return instance
 
         else:
             if len(entities) != 1 or named_entities:
-                if not (len(entities) == 0 and len(named_entities) == 1): # Allow single named entity
-                     raise ValueError(
+                if not (
+                    len(entities) == 0 and len(named_entities) == 1
+                ):  # Allow single named entity
+                    raise ValueError(
                         f"{cls.__name__} expects exactly 1 positional domain instance"
                     )
-            
+
             entity = entities[0] if entities else list(named_entities.values())[0]
             domain_data = entity.model_dump()
 
             if not (hasattr(cls, "__field_mappings__") and cls.__field_mappings__):
                 instance = cls(**domain_data)
-                cls._inject_computed_fields(instance, {(type(entity), None): entity}, context)
+                cls._inject_computed_fields(
+                    instance, {(type(entity), None): entity}, context
+                )
                 return instance
 
             mapped_data = {}
@@ -287,33 +295,37 @@ class ViewDTO(BaseModel, Generic[D, C], metaclass=ViewDTOMeta):
                     mapped_data[field_name] = domain_data[field_name]
 
             instance = cls(**mapped_data)
-            cls._inject_computed_fields(instance, {(type(entity), None): entity}, context)
+            cls._inject_computed_fields(
+                instance, {(type(entity), None): entity}, context
+            )
             return instance
 
     @classmethod
-    def _inject_computed_fields(cls, instance: Self, entity_map: dict, context: Any) -> None:
+    def _inject_computed_fields(
+        cls, instance: Self, entity_map: dict, context: Any
+    ) -> None:
         """
         Execute @computed methods and set their values on the instance.
         """
         computed_methods = getattr(cls, "__computed_methods__", {})
-        
+
         for name, member in computed_methods.items():
             # Check signature for context injection
             sig = inspect.signature(member)
             kwargs = {}
-            
+
             # Inject context if requested
             if "context" in sig.parameters:
                 # Check type hint if strict? For now just inject if name matches
                 kwargs["context"] = context
-            
+
             # Inject domains?
             # The method signature might request specific domains: def age(self, user: User)
             # We need to match arguments to entities in entity_map
             for param_name, param in sig.parameters.items():
                 if param_name in ("self", "context"):
                     continue
-                
+
                 # Try to find entity by type hint
                 if param.annotation != inspect.Parameter.empty:
                     # Find entity of this type in map
@@ -324,9 +336,9 @@ class ViewDTO(BaseModel, Generic[D, C], metaclass=ViewDTOMeta):
                             found = True
                             break
                     if not found:
-                            # Try by name (fallback)
-                            pass
-            
+                        # Try by name (fallback)
+                        pass
+
             try:
                 val = member(instance, **kwargs)
                 # Bypass frozen check

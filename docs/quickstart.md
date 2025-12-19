@@ -28,7 +28,7 @@ class User(Domain):
     is_active: bool = True
 ```
 
-> **What is `System[T]`?**  
+> **What is `System[T]`?**\
 > `System[T]` marks fields that are managed by your system (like auto-generated IDs). These fields are **excluded from `BuildDTO`** but **required in `ViewDTO`**.
 
 ## Step 2: Create a ViewDTO (Outbound)
@@ -119,12 +119,14 @@ Both styles are equivalent. Choose what feels more natural for your codebase.
 Potato includes a Mypy plugin that catches errors at compile time:
 
 **mypy.ini:**
+
 ```ini
 [mypy]
 plugins = potato.mypy
 ```
 
 Now Mypy will validate:
+
 - All required domain fields are present in ViewDTOs
 - Field mappings point to existing domain fields
 - Aggregates declare all referenced domains
@@ -141,12 +143,11 @@ class BadUserView(ViewDTO[User]):
 
 You now know the basics! Here's what to explore next:
 
-- **[Typed Context](core/viewdto.md#typed-context)**: Pass context to computed fields
 - **[Aggregates](core/aggregates.md)**: Compose multiple domains
-- **[Domain Aliasing](core/aggregates.md#domain-aliasing)**: Handle multiple instances of the same domain
+- **[Domain Aliasing](core/aliasing.md)**: Handle multiple instances of the same domain
 - **[Best Practices](guides/patterns.md)**: Recommended patterns
 - **[Complete Examples](guides/examples.md)**: Real-world use cases
 
----
+______________________________________________________________________
 
-**Questions?** Check out the [Core Concepts](concepts.md) guide for deeper understanding.
+**Questions?** Check out the [Philosophy](philosophy/index.md) guide for deeper understanding.

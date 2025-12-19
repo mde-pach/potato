@@ -7,6 +7,7 @@ Aggregates compose multiple domain models into a single cohesive unit. They help
 An aggregate is a cluster of domain objects that are treated as a single unit. In Potato, aggregates are domains that compose multiple other domains.
 
 Aggregates help you:
+
 - **Maintain consistency**: Related domains are kept together
 - **Make dependencies explicit**: Clear declaration of which domains are involved
 - **Enable validation**: Compile-time checking of aggregate relationships
@@ -80,6 +81,7 @@ order = Order(
 ### Why Extract Fields?
 
 Field extraction is useful when:
+
 - You want to denormalize data for performance
 - You need to store a snapshot of a value at a point in time
 - You want to avoid deep nesting in serialization
@@ -239,6 +241,5 @@ class Transaction(Aggregate[User, User, Product]):
 ## Next Steps
 
 - **[Aliasing](aliasing.md)** - Handle multiple instances of the same domain type
-- **[ViewDTO](../viewdto.md)** - Create views from aggregates
+- **[ViewDTO](viewdto.md)** - Create views from aggregates
 - **[Examples](../guides/examples.md)** - Real-world aggregate examples
-

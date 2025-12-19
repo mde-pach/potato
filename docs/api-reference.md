@@ -5,30 +5,30 @@ Auto-generated API reference for Potato. This documentation is generated from th
 ## Domain Module
 
 ::: potato.domain.Domain
-    options:
-      show_root_heading: true
-      show_root_toc_entry: true
-      show_source: true
+options:
+show_root_heading: true
+show_root_toc_entry: true
+show_source: true
 
 ::: potato.domain.aggregates.Aggregate
-    options:
-      show_root_heading: true
-      show_root_toc_entry: true
-      show_source: true
+options:
+show_root_heading: true
+show_root_toc_entry: true
+show_source: true
 
 ## DTO Module
 
 ::: potato.dto.ViewDTO
-    options:
-      show_root_heading: true
-      show_root_toc_entry: true
-      show_source: true
+options:
+show_root_heading: true
+show_root_toc_entry: true
+show_source: true
 
 ::: potato.dto.BuildDTO
-    options:
-      show_root_heading: true
-      show_root_toc_entry: true
-      show_source: true
+options:
+show_root_heading: true
+show_root_toc_entry: true
+show_source: true
 
 ## Module Index
 
@@ -42,4 +42,3 @@ Auto-generated API reference for Potato. This documentation is generated from th
 - **[ViewDTO](core/viewdto.md)** - User guide for ViewDTO
 - **[BuildDTO](core/builddto.md)** - User guide for BuildDTO
 - **[Aggregates](core/aggregates.md)** - User guide for aggregates
-

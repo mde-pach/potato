@@ -89,7 +89,7 @@ plugins = potato.mypy
 ## Documentation
 
 - **[Quickstart Guide](docs/quickstart.md)** - Get started in 5 minutes
-- **[Core Concepts](docs/concepts.md)** - Understand DTOs and Domain models
+- **[Philosophy](docs/philosophy/index.md)** - Understand the philosophy and design
 - **[ViewDTO Guide](docs/core/viewdto.md)** - Outbound data flow
 - **[BuildDTO Guide](docs/core/builddto.md)** - Inbound data flow
 - **[Aggregates](docs/core/aggregates.md)** - Multi-domain composition

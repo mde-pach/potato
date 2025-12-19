@@ -12,6 +12,7 @@ plugins = ["potato.mypy"]
 ```
 
 That's it! The plugin will automatically validate:
+
 - Aggregate declarations
 - Field mappings in ViewDTOs
 - Domain aliasing usage
@@ -43,13 +44,13 @@ mypy_path = "$MYPY_CONFIG_FILE_DIR"
 #### VS Code
 
 1. Install the Pylance extension
-2. Ensure `python.analysis.typeCheckingMode` is set to `basic` or `strict`
-3. Mypy will use the plugin automatically
+1. Ensure `python.analysis.typeCheckingMode` is set to `basic` or `strict`
+1. Mypy will use the plugin automatically
 
 #### PyCharm
 
 1. Enable mypy integration in Settings → Languages & Frameworks → Python → Type Checking
-2. The plugin will be used automatically
+1. The plugin will be used automatically
 
 ## Type Checking
 
@@ -72,20 +73,19 @@ pytest --mypy
 If you see `error: Cannot find plugin 'potato.mypy'`:
 
 1. Ensure Potato is installed: `pip install potato`
-2. Check that `plugins = ["potato.mypy"]` is in `[tool.mypy]` section
-3. Verify mypy can find the plugin: `mypy --show-traceback`
+1. Check that `plugins = ["potato.mypy"]` is in `[tool.mypy]` section
+1. Verify mypy can find the plugin: `mypy --show-traceback`
 
 ### Type Errors with Aggregates
 
 If you see type errors with aggregates:
 
 1. Ensure all referenced domains are in the `Aggregate[...]` declaration
-2. Check that field mappings use correct domain types
-3. Verify aliases are created before use
+1. Check that field mappings use correct domain types
+1. Verify aliases are created before use
 
 ## Next Steps
 
-- **[Quickstart](../quickstart.md)** - Get started with Potato
+- **[Quickstart](quickstart.md)** - Get started with Potato
 - **[Domain Models](core/domain.md)** - Learn about domain models
 - **[API Reference](api-reference.md)** - Full API documentation
-

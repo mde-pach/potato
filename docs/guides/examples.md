@@ -439,17 +439,17 @@ def create_comment(author_id: int, create_dto: CreateComment) -> CommentView:
 This section will contain a complete FastAPI integration example showing how to use Potato with FastAPI endpoints.
 
 The example will cover:
+
 - Setting up FastAPI routes
 - Using BuildDTO for request bodies
 - Using ViewDTO for response models
 - Error handling
 - Request validation
 
----
+______________________________________________________________________
 
 ## Next Steps
 
 - **[Patterns](patterns.md)** - Common patterns and best practices
 - **[ViewDTO](../core/viewdto.md)** - Learn more about ViewDTO
 - **[BuildDTO](../core/builddto.md)** - Learn more about BuildDTO
-

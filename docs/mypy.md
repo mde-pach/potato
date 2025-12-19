@@ -13,7 +13,7 @@ class UserView(ViewDTO[User]):
     # Missing 'email' field - Mypy will catch this!
 ```
 
-**Without the plugin**: Error at runtime when you try to build the DTO  
+**Without the plugin**: Error at runtime when you try to build the DTO\
 **With the plugin**: Error at type-check time, before running your code
 
 ## Installation
@@ -70,6 +70,7 @@ class GoodUserView(ViewDTO[User]):
 ```
 
 **Error message:**
+
 ```
 ViewDTO "BadUserView" field "login" maps to non-existent Domain field "unknown_field" in "User"
 ```
@@ -97,6 +98,7 @@ class GoodAggregate(Aggregate[User, Order]):
 ```
 
 **Error message:**
+
 ```
 Field "order" has type "Order" which is not declared in the Aggregate generic
 ```
@@ -221,14 +223,15 @@ Install the **Mypy** extension and configure:
 ### PyCharm
 
 1. Go to **Settings → Tools → Mypy**
-2. Enable **Mypy**
-3. Set **Configuration file** to `mypy.ini`
+1. Enable **Mypy**
+1. Set **Configuration file** to `mypy.ini`
 
 ## Troubleshooting
 
 ### Plugin Not Found
 
 **Error**:
+
 ```
 Error: Cannot find module 'potato.mypy'
 ```
@@ -253,7 +256,7 @@ class UserView(ViewDTO[User]):
     login: str = Field(source=User.username)  # type: ignore[misc]
 ```
 
-2. **Report an issue** on GitHub if you believe it's a bug
+**Report an issue** on GitHub if you believe it's a bug
 
 ### Performance
 
@@ -270,9 +273,9 @@ incremental = True  # Cache results
 The plugin hooks into Mypy's type checking process:
 
 1. **Class Definition Hook**: Intercepts `ViewDTO`, `BuildDTO`, `Aggregate` class definitions
-2. **Type Analysis**: Extracts generic type parameters (e.g., `ViewDTO[User]`)
-3. **Validation**: Checks field presence, mappings, and aggregate declarations
-4. **Error Reporting**: Emits Mypy errors with helpful messages
+1. **Type Analysis**: Extracts generic type parameters (e.g., `ViewDTO[User]`)
+1. **Validation**: Checks field presence, mappings, and aggregate declarations
+1. **Error Reporting**: Emits Mypy errors with helpful messages
 
 ## Limitations
 
@@ -286,14 +289,15 @@ The plugin has some limitations:
 
 The Mypy plugin provides:
 
-| Feature | What It Validates |
-|---------|-------------------|
-| Field Mappings | Mappings point to existing fields |
-| Aggregates | All domains are declared in generic |
-| Aliasing | Domain aliases are properly typed |
+| Feature        | What It Validates                   |
+| -------------- | ----------------------------------- |
+| Field Mappings | Mappings point to existing fields   |
+| Aggregates     | All domains are declared in generic |
+| Aliasing       | Domain aliases are properly typed   |
 
----
+______________________________________________________________________
 
 **Next Steps:**
+
 - [Configure Mypy](https://mypy.readthedocs.io/en/stable/config_file.html) for your project
 - [Best Practices](guides/patterns.md) for using Potato with Mypy

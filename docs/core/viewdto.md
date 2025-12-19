@@ -45,6 +45,7 @@ print(view.login)  # "alice" (from user.username)
 ### How Field Mapping Works
 
 The `Annotated[type, Domain.field]` syntax tells Potato:
+
 - The DTO field type (`str`)
 - Which domain field to read from (`User.username`)
 
@@ -239,14 +240,13 @@ except ValidationError as e:
 ## Best Practices
 
 1. **Keep Views Focused**: Each view should serve a specific purpose
-2. **Use Field Mapping**: Rename fields to match external API contracts
-3. **Exclude Sensitive Data**: Don't include fields that shouldn't be exposed
-4. **Document Field Mappings**: Use clear names that indicate the source domain field
-5. **Leverage Immutability**: Rely on frozen views to prevent accidental mutations
+1. **Use Field Mapping**: Rename fields to match external API contracts
+1. **Exclude Sensitive Data**: Don't include fields that shouldn't be exposed
+1. **Document Field Mappings**: Use clear names that indicate the source domain field
+1. **Leverage Immutability**: Rely on frozen views to prevent accidental mutations
 
 ## Next Steps
 
 - **[BuildDTO](builddto.md)** - Create input DTOs
 - **[Aggregates](aggregates.md)** - Work with multiple domains
 - **[Aliasing](aliasing.md)** - Handle multiple instances of the same domain
-

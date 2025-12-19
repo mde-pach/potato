@@ -15,7 +15,7 @@ build-backend = "hatchling.build"
 packages = ["src/potato"]
 
 [tool.mypy]
-files = ["./src", "./tests"]
+files = ["./src", "./tests", "main.py"]
 plugins = ["potato.mypy"]
 mypy_path = "$MYPY_CONFIG_FILE_DIR"
 
@@ -26,4 +26,6 @@ dev = [
     "mkdocs>=1.6.0",
     "mkdocs-material>=9.5.0",
     "mkdocstrings[python]>=0.25.0",
+    "ruff>=0.14.10",
+    "mypy[dmypy]>=1.18.2",
 ]

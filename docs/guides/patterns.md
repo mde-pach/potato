@@ -371,4 +371,3 @@ view = TransactionView.build(buyer=buyer, seller=seller, product=product)
 - **[Examples](examples.md)** - Complete real-world examples
 - **[ViewDTO](../core/viewdto.md)** - Learn more about ViewDTO
 - **[BuildDTO](../core/builddto.md)** - Learn more about BuildDTO
-

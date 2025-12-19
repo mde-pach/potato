@@ -64,7 +64,15 @@ plugins:
 
 nav:
   - Home: index.md
-  - Concepts: concepts.md
+  - Philosophy:
+    - Introduction: philosophy/index.md
+    - Domain-Driven Design: philosophy/domain-driven-design.md
+    - Data Transfer Objects: philosophy/data-transfer-objects.md
+    - Unidirectional Data Flow: philosophy/unidirectional-data-flow.md
+    - Type Safety: philosophy/type-safety.md
+    - Immutability: philosophy/immutability.md
+    - System Fields: philosophy/system-fields.md
+    - Separation of Concerns: philosophy/separation-of-concerns.md
   - Quickstart: quickstart.md
   - Core:
     - Domain Models: core/domain.md
@@ -76,5 +84,6 @@ nav:
     - Patterns: guides/patterns.md
     - Examples: guides/examples.md
   - Configuration: configuration.md
+  - Mypy: mypy.md
   - API Reference: api-reference.md
 

@@ -119,8 +119,9 @@ view = TransactionView.build(buyer, seller, product)  # Raises ValueError
 ### Argument Names
 
 The argument names must match:
+
 1. The alias name (if the alias was created with `.alias("name")`)
-2. Or the lowercase domain name (for non-aliased domains)
+1. Or the lowercase domain name (for non-aliased domains)
 
 ```python
 # Aliases
@@ -328,4 +329,3 @@ class RelationshipView(ViewDTO[Aggregate[Source, Target]]):
 - **[Aggregates](aggregates.md)** - Learn about aggregates
 - **[ViewDTO](viewdto.md)** - Create views with aliases
 - **[Examples](../guides/examples.md)** - Real-world aliasing examples
-

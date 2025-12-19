@@ -45,13 +45,14 @@ user = dto.to_domain(id=2)
 
 Modern applications need clear boundaries:
 
-| Layer | Responsibility | Potato Concept |
-|-------|---------------|----------------|
-| External Input | API requests, user input | `BuildDTO` |
-| Domain Logic | Business rules, validation | `Domain` |
-| External Output | API responses, serialization | `ViewDTO` |
+| Layer           | Responsibility               | Potato Concept |
+| --------------- | ---------------------------- | -------------- |
+| External Input  | API requests, user input     | `BuildDTO`     |
+| Domain Logic    | Business rules, validation   | `Domain`       |
+| External Output | API responses, serialization | `ViewDTO`      |
 
 **Benefits:**
+
 - ✅ Prevent coupling between external and internal representations
 - ✅ Make data transformations explicit and traceable
 - ✅ Catch errors at compile time with Mypy
@@ -62,7 +63,7 @@ Modern applications need clear boundaries:
 ### Getting Started
 
 - **[Quickstart Guide](quickstart.md)** - Get up and running in 5 minutes
-- **[Core Concepts](concepts.md)** - Understand the philosophy and design
+- **[Philosophy](philosophy/index.md)** - Understand the philosophy and design
 
 ### Core Features
 
@@ -97,6 +98,7 @@ class UserView(ViewDTO[User]):
 ```
 
 **Features:**
+
 - Field mapping (`Field(source=...)` or `Annotated`)
 - Computed fields with `@computed`decorator
 - Typed context injection
@@ -117,6 +119,7 @@ user = dto.to_domain(id=1)  # Provide system fields
 ```
 
 **Features:**
+
 - Automatic `System[T]` field exclusion
 - `to_domain()` conversion
 - Pydantic validation
@@ -159,17 +162,19 @@ plugins = potato.mypy
 ## Quick Navigation
 
 **New to Potato?**
+
 1. Start with the [Quickstart Guide](quickstart.md)
-2. Read about [Core Concepts](concepts.md)
-3. Explore [real-world examples](guides/examples.md)
+1. Read about [Philosophy](philosophy/index.md)
+1. Explore [real-world examples](guides/examples.md)
 
 **Looking for something specific?**
+
 - [Field mapping](core/viewdto.md#field-mapping)
 - [Computed fields](core/viewdto.md#computed-fields)
 - [System fields](core/domain.md#system-fields)
 - [Aggregates](core/aggregates.md)
 - [Mypy validation](mypy.md)
 
----
+______________________________________________________________________
 
 **Ready to get started?** → [Quickstart Guide](quickstart.md)

@@ -229,23 +229,22 @@ def handle_create_user(data: dict) -> User:
 ## Best Practices
 
 1. **Keep DTOs Minimal**: Only include fields that come from external sources
-2. **Use Separate DTOs**: Create different DTOs for create vs update operations
-3. **Validate Early**: Validate data as soon as it enters your system
-4. **Document Required Fields**: Make it clear which fields are required
-5. **Handle Errors Gracefully**: Provide clear error messages for validation failures
+1. **Use Separate DTOs**: Create different DTOs for create vs update operations
+1. **Validate Early**: Validate data as soon as it enters your system
+1. **Document Required Fields**: Make it clear which fields are required
+1. **Handle Errors Gracefully**: Provide clear error messages for validation failures
 
 ## BuildDTO vs ViewDTO
 
-| Aspect | BuildDTO | ViewDTO |
-|--------|----------|---------|
-| **Purpose** | Inbound data (API requests) | Outbound data (API responses) |
-| **Mutability** | Mutable (can be modified) | Immutable (frozen) |
-| **Field Mapping** | Not needed (1:1 with domain) | Supports field renaming |
-| **Use Case** | Creating domain models | Serializing domain models |
+| Aspect            | BuildDTO                     | ViewDTO                       |
+| ----------------- | ---------------------------- | ----------------------------- |
+| **Purpose**       | Inbound data (API requests)  | Outbound data (API responses) |
+| **Mutability**    | Mutable (can be modified)    | Immutable (frozen)            |
+| **Field Mapping** | Not needed (1:1 with domain) | Supports field renaming       |
+| **Use Case**      | Creating domain models       | Serializing domain models     |
 
 ## Next Steps
 
 - **[ViewDTO](viewdto.md)** - Create output DTOs
 - **[Domain Models](domain.md)** - Learn about domain models
 - **[Patterns](../guides/patterns.md)** - Common patterns and best practices
-
