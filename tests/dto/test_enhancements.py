@@ -74,9 +74,8 @@ class TestUnassignedSentinel:
         with pytest.raises(AttributeError, match="Auto field has not been assigned"):
             float(UNASSIGNED)
 
-    def test_unassigned_raises_on_bool(self) -> None:
-        with pytest.raises(AttributeError, match="Auto field has not been assigned"):
-            bool(UNASSIGNED)
+    def test_unassigned_bool_is_false(self) -> None:
+        assert bool(UNASSIGNED) is False
 
     def test_unassigned_raises_on_comparison(self) -> None:
         with pytest.raises(AttributeError, match="Auto field has not been assigned"):

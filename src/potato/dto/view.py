@@ -1,17 +1,22 @@
 import asyncio
 import inspect
+import sys
 import types
 import typing
 from typing import (
     Any,
     ClassVar,
     Generic,
-    Self,
     Union,
     get_args,
     get_origin,
     get_type_hints,
 )
+
+if sys.version_info >= (3, 11):
+    from typing import Self
+else:
+    from typing_extensions import Self
 
 from pydantic import BaseModel, ConfigDict
 from pydantic import Field as PydanticField

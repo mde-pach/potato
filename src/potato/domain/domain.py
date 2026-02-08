@@ -6,23 +6,34 @@ with class-attribute field access for DTO field mapping.
 """
 
 import copy
+import sys
 from typing import (
     Annotated,
     TYPE_CHECKING,
     Any,
-    dataclass_transform,
     get_args,
     get_origin,
     get_type_hints,
 )
 
+if sys.version_info >= (3, 11):
+    from typing import dataclass_transform
+else:
+    from typing_extensions import dataclass_transform
+
 from pydantic import BaseModel, ConfigDict
-from pydantic._internal._model_construction import (
-    ModelMetaclass,
-    NoInitField,
-    PydanticModelField,
-    PydanticModelPrivateAttr,
-)
+from pydantic._internal._model_construction import ModelMetaclass
+
+try:
+    from pydantic._internal._model_construction import (
+        NoInitField,
+        PydanticModelField,
+        PydanticModelPrivateAttr,
+    )
+except ImportError:
+    NoInitField = type("NoInitField", (), {})  # type: ignore
+    PydanticModelField = type("PydanticModelField", (), {})  # type: ignore
+    PydanticModelPrivateAttr = type("PydanticModelPrivateAttr", (), {})  # type: ignore
 
 from potato.core import AutoMarker, UNASSIGNED
 from potato.types import FieldProxy

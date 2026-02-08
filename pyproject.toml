@@ -3,8 +3,11 @@ name = "potato"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
-requires-python = ">=3.14"
-dependencies = ["pydantic>=2.12.4"]
+requires-python = ">=3.10"
+dependencies = [
+    "pydantic>=2.4",
+    "typing_extensions>=4.6.0",
+]
 
 [build-system]
 requires = ["hatchling"]
@@ -23,10 +26,13 @@ mypy_path = "$MYPY_CONFIG_FILE_DIR"
 asyncio_mode = "auto"
 
 [dependency-groups]
-dev = [
+test = [
     "pytest>=9.0.1",
     "pytest-asyncio>=1.0.0",
     "pytest-cov>=6.0.0",
+]
+dev = [
+    {include-group = "test"},
     "mkdocs>=1.6.0",
     "mkdocs-material>=9.5.0",
     "mkdocstrings[python]>=0.25.0",

@@ -13,13 +13,24 @@ Usage:
     OrderAggregate.customer.username  # → FieldProxy(User, "username", namespace="customer")
 """
 
-from typing import Any, dataclass_transform, get_type_hints
+import sys
+from typing import Any, get_type_hints
 
-from pydantic._internal._model_construction import (
-    NoInitField,
-    PydanticModelField,
-    PydanticModelPrivateAttr,
-)
+if sys.version_info >= (3, 11):
+    from typing import dataclass_transform
+else:
+    from typing_extensions import dataclass_transform
+
+try:
+    from pydantic._internal._model_construction import (
+        NoInitField,
+        PydanticModelField,
+        PydanticModelPrivateAttr,
+    )
+except ImportError:
+    NoInitField = type("NoInitField", (), {})  # type: ignore
+    PydanticModelField = type("PydanticModelField", (), {})  # type: ignore
+    PydanticModelPrivateAttr = type("PydanticModelPrivateAttr", (), {})  # type: ignore
 
 from potato.types import DomainFieldAccessor
 

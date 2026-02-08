@@ -1,16 +1,31 @@
-from typing import (
-    Any,
-    TypeVar,
-    dataclass_transform,
-)
+import sys
+from typing import Any
 
 from pydantic import Field as PydanticField
-from pydantic._internal._model_construction import (
-    ModelMetaclass,
-    NoInitField,
-    PydanticModelField,
-    PydanticModelPrivateAttr,
-)
+from pydantic._internal._model_construction import ModelMetaclass
+
+try:
+    from pydantic._internal._model_construction import (
+        NoInitField,
+        PydanticModelField,
+        PydanticModelPrivateAttr,
+    )
+except ImportError:
+    # Older Pydantic versions may not export these private types.
+    # They're only used in @dataclass_transform field_specifiers (type-checking only).
+    NoInitField = type("NoInitField", (), {})  # type: ignore
+    PydanticModelField = type("PydanticModelField", (), {})  # type: ignore
+    PydanticModelPrivateAttr = type("PydanticModelPrivateAttr", (), {})  # type: ignore
+
+if sys.version_info >= (3, 13):
+    from typing import TypeVar
+else:
+    from typing_extensions import TypeVar
+
+if sys.version_info >= (3, 11):
+    from typing import dataclass_transform
+else:
+    from typing_extensions import dataclass_transform
 
 D = TypeVar("D")
 C = TypeVar("C", default=None)

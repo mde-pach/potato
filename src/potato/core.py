@@ -18,7 +18,9 @@ class _Unassigned:
     def __float__(self) -> float:
         raise AttributeError(self._msg)
     def __bool__(self) -> bool:
-        raise AttributeError(self._msg)
+        # Return False instead of raising: older Pydantic's smart_deepcopy
+        # calls `not obj` on field defaults during model construction.
+        return False
     def __eq__(self, other: object) -> bool:
         if isinstance(other, _Unassigned):
             return True
