@@ -1,8 +1,8 @@
 site_name: Potato Documentation
 site_description: Type-safe DTOs and Domain models for unidirectional data flow
-site_url: https://potato.readthedocs.io/
-repo_url: https://github.com/your-org/potato
-repo_name: potato
+site_url: https://mde-pach.github.io/potato/
+repo_url: https://github.com/mde-pach/potato
+repo_name: mde-pach/potato
 
 theme:
   name: material
