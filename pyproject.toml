@@ -1,13 +1,31 @@
 [project]
-name = "potato"
+name = "potato-dto"
 version = "0.1.0"
-description = "Add your description here"
+description = "Type-safe DTOs for clean architecture in Python, built on Pydantic v2"
 readme = "README.md"
+license = "MIT"
 requires-python = ">=3.10"
+keywords = ["dto", "pydantic", "clean-architecture", "domain-driven-design"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Typing :: Typed",
+]
 dependencies = [
     "pydantic>=2.4",
     "typing_extensions>=4.6.0",
 ]
+
+[project.urls]
+Repository = "https://github.com/mde-pach/potato"
 
 [build-system]
 requires = ["hatchling"]
