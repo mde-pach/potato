@@ -55,7 +55,7 @@ class UserService:
         created_user = self.user_repository.create(user)
         
         # Convert to ViewDTO and return
-        return UserView.build(created_user)
+        return UserView.from_domain(created_user)
     
     def get_user(self, user_id: int) -> Optional[UserView]:
         """
@@ -68,7 +68,7 @@ class UserService:
             User view or None if not found
         """
         user = self.user_repository.get_by_id(user_id)
-        return UserView.build(user) if user else None
+        return UserView.from_domain(user) if user else None
     
     def list_users(self, skip: int = 0, limit: int = 100) -> list[UserListView]:
         """
@@ -82,7 +82,7 @@ class UserService:
             List of user views
         """
         users = self.user_repository.list_all(skip, limit)
-        return [UserListView.build(user) for user in users]
+        return UserListView.from_domains(users)
     
     def update_user(self, user_id: int, user_update: UserUpdate) -> UserView:
         """
@@ -109,16 +109,14 @@ class UserService:
             if existing:
                 raise ValueError(f"Username '{user_update.username}' already exists")
         
-        # Apply updates (only set fields that are provided)
-        update_data = user_update.model_dump(exclude_unset=True)
-        for field, value in update_data.items():
-            setattr(user, field, value)
-        
+        # Apply partial updates using apply_to()
+        updated_user = user_update.apply_to(user)
+
         # Persist changes
-        updated_user = self.user_repository.update(user)
-        
+        updated_user = self.user_repository.update(updated_user)
+
         # Return view
-        return UserView.build(updated_user)
+        return UserView.from_domain(updated_user)
     
     def delete_user(self, user_id: int) -> bool:
         """

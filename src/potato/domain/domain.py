@@ -1,23 +1,22 @@
 """
-Domain module - Core domain model implementation with aggregate support.
+Domain module - Core domain model implementation.
 
-This module provides the Domain base class and supporting infrastructure for
-building rich domain models with compile-time validation of aggregate relationships.
+Provides the Domain base class for building rich domain models
+with class-attribute field access for DTO field mapping.
 """
 
+import copy
 from typing import (
-    TYPE_CHECKING,
     Annotated,
+    TYPE_CHECKING,
     Any,
-    ClassVar,
-    Self,
     dataclass_transform,
     get_args,
     get_origin,
     get_type_hints,
 )
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from pydantic._internal._model_construction import (
     ModelMetaclass,
     NoInitField,
@@ -25,14 +24,17 @@ from pydantic._internal._model_construction import (
     PydanticModelPrivateAttr,
 )
 
-from potato.types import (
-    AliasedType,
-    FieldProxy,
-)
-from potato.introspection import extract_field_mappings
+from potato.core import AutoMarker, UNASSIGNED
+from potato.types import FieldProxy
 
-if TYPE_CHECKING:
-    from .aggregates import Aggregate
+
+def _is_auto_field(field_type: Any) -> bool:
+    """Check if a type is Auto[T] (has AutoMarker in metadata)."""
+    if get_origin(field_type) is Annotated:
+        for meta in get_args(field_type)[1:]:
+            if isinstance(meta, AutoMarker) or meta is AutoMarker:
+                return True
+    return False
 
 
 @dataclass_transform(
@@ -41,17 +43,10 @@ if TYPE_CHECKING:
 )
 class DomainMeta(ModelMetaclass):
     """
-    Metaclass for Domain models with aggregate support.
+    Metaclass for Domain models.
 
-    This metaclass extends Pydantic's ModelMetaclass to provide:
-    1. Field access as class attributes (e.g., User.username returns FieldProxy)
-    2. Aggregate relationship extraction and validation
-    3. Field mapping extraction for aggregate build() methods
-
-    When a Domain is defined with Aggregate[Type1, Type2, ...], this metaclass:
-    - Stores the aggregate types in __aggregate_domain_types__
-    - Extracts field mappings from Annotated type hints
-    - Enables the automatic build() method for aggregates
+    Provides field access as class attributes:
+        User.username → FieldProxy(User, "username")
     """
 
     def __new__(
@@ -63,24 +58,23 @@ class DomainMeta(ModelMetaclass):
     ) -> type:
         cls = super().__new__(mcs, name, bases, namespace, **kwargs)  # type: ignore
 
-        # Check if any base class has Pydantic generic metadata with Aggregate
-        for base in cls.__bases__:
-            if hasattr(base, "__pydantic_generic_metadata__"):
-                metadata = base.__pydantic_generic_metadata__
-                # metadata['args'] contains the type arguments passed to the generic
-                if "args" in metadata and metadata["args"]:
-                    # Check if the first argument is Aggregate[...]
-                    first_arg = metadata["args"][0]
-                    aggregate_origin = get_origin(first_arg)
-                    if aggregate_origin is not None:
-                        # Get the domain types from Aggregate[User, Price, ...]
-                        aggregate_args = get_args(first_arg)
-                        if aggregate_args:
-                            # Store metadata for the static build method
-                            cls.__aggregate_domain_types__ = aggregate_args  # type: ignore
-                            # Extract field mappings
-                            cls.__aggregate_field_mappings__ = extract_field_mappings(cls)  # type: ignore
-                            break
+        # Set UNASSIGNED as default for Auto fields
+        if name != "Domain":
+            try:
+                hints = get_type_hints(cls, include_extras=True)
+            except Exception:
+                hints = {}
+
+            has_auto = False
+            for field_name, field_type in hints.items():
+                if _is_auto_field(field_type) and field_name in cls.model_fields:
+                    field_info = copy.copy(cls.model_fields[field_name])
+                    field_info.default = UNASSIGNED
+                    cls.model_fields[field_name] = field_info
+                    has_auto = True
+
+            if has_auto:
+                cls.model_rebuild(force=True)
 
         return cls
 
@@ -88,19 +82,7 @@ class DomainMeta(ModelMetaclass):
 
         def __getattr__(cls, name: str):
             """
-            Enable field access as class attributes (e.g., DomainA.name).
-
-            When accessing a field on a Domain class (not instance), return a
-            FieldProxy that can be used in Annotated type hints for field mappings.
-
-            Args:
-                name: The attribute name being accessed
-
-            Returns:
-                FieldProxy for annotated fields, or delegates to parent for others
-
-            Example:
-                >>> DomainA.name  # Returns FieldProxy(DomainA, "name")
+            Enable field access as class attributes (e.g., User.username → FieldProxy).
             """
             if cls.__name__ == "Domain":
                 return super().__getattr__(name)
@@ -109,21 +91,19 @@ class DomainMeta(ModelMetaclass):
 
             if name in annotations:
                 # Don't return FieldProxy when Pydantic is collecting model fields
-                # to determine default values. This prevents FieldProxy from being
-                # used as a default value for required fields.
                 import inspect
 
                 frame = inspect.currentframe()
                 try:
-                    caller_frame = frame.f_back
-                    if (
-                        caller_frame
-                        and "collect_model_fields" in caller_frame.f_code.co_name
-                    ):
-                        # Pydantic is collecting fields, don't provide FieldProxy as default
-                        raise AttributeError(
-                            f"type object '{cls.__name__}' has no attribute '{name}'"
-                        )
+                    check_frame = frame.f_back
+                    for _ in range(5):
+                        if check_frame is None:
+                            break
+                        if "collect_model_fields" in check_frame.f_code.co_name:
+                            raise AttributeError(
+                                f"type object '{cls.__name__}' has no attribute '{name}'"
+                            )
+                        check_frame = check_frame.f_back
                 finally:
                     del frame
 
@@ -136,58 +116,13 @@ class Domain(BaseModel, metaclass=DomainMeta):
     """
     Base class for all domain models.
 
-    Domain extends Pydantic's BaseModel with additional features:
-    1. Field access as class attributes (e.g., DomainA.name)
-    2. Aliasing via DomainA.alias("first") for multiple instances
-    3. Compile-time validation of field mappings and aggregate declarations
-
-    Basic Usage:
-        >>> class DomainA(Domain):
+    Usage:
+        >>> class User(Domain):
         ...     id: int
-        ...     name: str
-        ...     value: str
+        ...     username: str
+        ...     email: str
 
-    For aggregates that encapsulate multiple domains, use the Aggregate class:
-        >>> class Order(Aggregate[User, Product, Price]):
-        ...     customer: User
-        ...     product_name: Annotated[str, Product.name]
-        ...     price_amount: Annotated[int, Price.amount]
-
-    Aliasing Usage (for multiple instances of the same domain):
-        >>> Buyer = User.alias("buyer")
-        >>> Seller = User.alias("seller")
-        >>> class Transaction(Aggregate[Buyer, Seller, Product]):
-        ...     buyer_id: Annotated[int, Buyer.id]
-        ...     seller_id: Annotated[int, Seller.id]
-        ...     product: Product
-
-    Attributes:
-        __aggregate_domain_types__: Tuple of Domain types in the aggregate
-        __aggregate_field_mappings__: Mapping of fields to (domain_class, field_name, alias)
+    Field access as class attributes for ViewDTO mapping:
+        >>> User.username  # → FieldProxy(User, "username")
     """
-
-    __aggregate_domain_types__: ClassVar[tuple[type, ...]] = ()
-    __aggregate_field_mappings__: ClassVar[dict[str, tuple[type, str, str | None]]] = {}
-
-    @classmethod
-    def alias(cls: type[Self], alias_name: str) -> type[Self]:
-        """
-        Create an aliased type reference for this domain.
-
-        This enables using multiple instances of the same domain type in aggregates.
-
-        Args:
-            alias_name: The alias to use for this instance
-
-        Returns:
-            A type that behaves like the original Domain class but with alias metadata.
-            Supports field access (e.g., Source.id) and can be used in Aggregate declarations.
-
-        Example:
-            >>> Source = DomainA.alias("source")
-            >>> Target = DomainA.alias("target")
-            >>> class RelationView(ViewDTO[Aggregate[Source, Target, DomainB]]):
-            ...     source_id: Annotated[int, Source.id]
-            ...     target_id: Annotated[int, Target.id]
-        """
-        return AliasedType(cls, alias_name)  # type: ignore[return-value, call-arg]
+    model_config = ConfigDict(arbitrary_types_allowed=True)

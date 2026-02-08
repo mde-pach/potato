@@ -1,16 +1,27 @@
 """Aggregate module for Domain-Driven Design aggregates.
 
-Aggregates are special Domain classes that encapsulate other domains,
-representing a consistency boundary in your domain model.
+Aggregates are Domain classes that compose other domains.
+Domain types are inferred from field annotations — no generic syntax needed.
+
+Usage:
+    class OrderAggregate(Aggregate):
+        customer: User
+        product: Product
+        amount: int  # aggregate's own field
+
+    # Field access for ViewDTO mapping:
+    OrderAggregate.customer.username  # → FieldProxy(User, "username", namespace="customer")
 """
 
-from typing import Any, TypeVarTuple, dataclass_transform
+from typing import Any, dataclass_transform, get_type_hints
 
 from pydantic._internal._model_construction import (
     NoInitField,
     PydanticModelField,
     PydanticModelPrivateAttr,
 )
+
+from potato.types import DomainFieldAccessor
 
 from .domain import Domain, DomainMeta
 
@@ -20,57 +31,89 @@ from .domain import Domain, DomainMeta
     field_specifiers=(PydanticModelField, NoInitField, PydanticModelPrivateAttr),
 )
 class AggregateMeta(DomainMeta):  # type: ignore
-    """Metaclass for Aggregate that handles variadic generic parameters."""
+    """Metaclass for Aggregate that infers domain types from field annotations."""
 
-    def __getitem__(cls, params: Any) -> type:
-        """Handle Aggregate[Type1, Type2, ...] subscripting."""
-        # Normalize params to always be a tuple
-        if not isinstance(params, tuple):
-            params = (params,)
+    def __new__(
+        mcs,
+        name: str,
+        bases: tuple[type, ...],
+        namespace: dict[str, Any],
+        **kwargs: Any,
+    ) -> type:
+        cls = super().__new__(mcs, name, bases, namespace, **kwargs)
 
-        # Create a new class that inherits from Aggregate
-        # and stores the aggregate types as class variable
-        class_dict = {
-            "__aggregate_domain_types__": params,
-            "__module__": cls.__module__,
-        }
+        # Skip validation for the base Aggregate class
+        if name == "Aggregate":
+            return cls
 
-        # Create new class name
-        type_names = "_".join(
-            t.__name__ if hasattr(t, "__name__") else str(t) for t in params
-        )
-        new_class_name = f"{cls.__name__}[{type_names}]"
+        # Infer domain types from field annotations
+        domain_fields: dict[str, type] = {}  # field_name → Domain subclass
+        try:
+            hints = get_type_hints(cls)
+        except Exception:
+            hints = {}
 
-        # Create the new class
-        new_class = type(cls)(new_class_name, (cls,), class_dict)
+        for field_name, field_type in hints.items():
+            if field_name.startswith("_"):
+                continue
+            if isinstance(field_type, type) and issubclass(field_type, Domain) and field_type is not Domain:
+                domain_fields[field_name] = field_type
 
-        # Extract field mappings for this aggregate
-        if hasattr(Domain, "__class__") and hasattr(
-            Domain.__class__, "_extract_field_mappings"
-        ):
-            Domain.__class__._extract_field_mappings(new_class)  # type: ignore
+        cls.__aggregate_domain_fields__ = domain_fields  # type: ignore
 
-        return new_class
+        return cls
+
+    def __getattr__(cls, name: str):
+        """
+        Return DomainFieldAccessor for Domain-typed fields.
+
+        Aggregate.field → DomainFieldAccessor if field is a Domain type
+        Otherwise, fall back to normal FieldProxy behavior.
+        """
+        # Don't intercept during Pydantic model field collection
+        import inspect
+        frame = inspect.currentframe()
+        try:
+            # Check up to 5 frames for collect_model_fields
+            check_frame = frame.f_back
+            for _ in range(5):
+                if check_frame is None:
+                    break
+                if "collect_model_fields" in check_frame.f_code.co_name:
+                    raise AttributeError(
+                        f"type object '{cls.__name__}' has no attribute '{name}'"
+                    )
+                check_frame = check_frame.f_back
+        finally:
+            del frame
+
+        # Avoid infinite recursion: look up __aggregate_domain_fields__ through MRO dicts
+        domain_fields: dict[str, type] = {}
+        for klass in cls.__mro__:
+            if "__aggregate_domain_fields__" in klass.__dict__:
+                domain_fields = klass.__dict__["__aggregate_domain_fields__"]
+                break
+
+        if name in domain_fields:
+            return DomainFieldAccessor(domain_fields[name], namespace=name)
+
+        # Fall back to DomainMeta behavior for aggregate's own non-domain fields
+        return super().__getattr__(name)
 
 
-D = TypeVarTuple("D")
-
-
-class Aggregate[*D](Domain, metaclass=AggregateMeta):  # type: ignore
+class Aggregate(Domain, metaclass=AggregateMeta):
     """
-    Base class for aggregate domains that encapsulate multiple other domains.
+    Base class for aggregate domains that compose multiple other domains.
 
-    In Domain-Driven Design, an Aggregate is a cluster of domain objects that
-    are treated as a single unit. The Aggregate ensures consistency of changes
-    being made within the boundary.
+    Domain types are inferred from field annotations — just declare fields
+    with Domain types and the framework handles the rest.
 
     Usage:
-        >>> class Order(Aggregate[User, Product, Price]):
+        >>> class Order(Aggregate):
         ...     customer: User
         ...     product: Product
-        ...     price_amount: Annotated[int, Price.amount]
+        ...     amount: int
 
-    The generic parameters specify which domains this aggregate encapsulates.
+        >>> Order.customer.username  # → FieldProxy(User, "username", namespace="customer")
     """
-
     pass

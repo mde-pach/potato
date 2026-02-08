@@ -4,7 +4,7 @@ from datetime import datetime
 
 from domain.models import User
 
-from potato import BuildDTO, Field, System, ViewDTO, computed
+from potato import BuildDTO, Field, ViewDTO, computed
 
 
 class UserView(ViewDTO[User]):
@@ -14,10 +14,10 @@ class UserView(ViewDTO[User]):
     Features demonstrated:
     - Field mapping: 'login' mapped from 'username'
     - Computed field: 'display_name' derived from username
-    - System fields included in output (id, created_at)
+    - Auto fields included in output (id, created_at)
     """
 
-    id: System[int]
+    id: int
     login: str = Field(source=User.username)  # Field mapping example
     email: str
     full_name: str
@@ -46,10 +46,10 @@ class UserListView(ViewDTO[User]):
 
 class UserCreate(BuildDTO[User]):
     """
-    BuildDTO for creating users - demonstrates System field exclusion.
+    BuildDTO for creating users - demonstrates Auto field exclusion.
 
     Features demonstrated:
-    - System fields (id, created_at) automatically excluded
+    - Auto fields (id, created_at) automatically excluded
     - Validation via Pydantic
     - to_domain() conversion
     """
@@ -60,10 +60,10 @@ class UserCreate(BuildDTO[User]):
     is_active: bool = True
 
 
-class UserUpdate(BuildDTO[User]):
-    """BuildDTO for updating users with optional fields."""
+class UserUpdate(BuildDTO[User], partial=True):
+    """BuildDTO for updating users - all fields optional with partial=True."""
 
-    username: str | None = None
-    email: str | None = None
-    full_name: str | None = None
-    is_active: bool | None = None
+    username: str
+    email: str
+    full_name: str
+    is_active: bool

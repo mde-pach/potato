@@ -2,40 +2,41 @@
 
 A comprehensive example application demonstrating the **potato** package using FastAPI with Domain-Driven Design (DDD) architecture, dependency injection, repository pattern, and SQLAlchemy ORM.
 
-## 🎯 What This Example Demonstrates
+## What This Example Demonstrates
 
 ### Potato Package Features
 
 1. **ViewDTO** (Outbound Data)
    - Field mapping: `login` from `username` using `Field(source=...)`
    - Computed fields: `@computed` decorator for derived data
-   - Building from aggregates with multiple domains
+   - Building from field-based aggregates with multiple domains
    - Immutability by default
 
 2. **BuildDTO** (Inbound Data)
-   - Automatic `System[T]` field exclusion
+   - Automatic `Auto[T]` field exclusion
    - `to_domain()` conversion
+   - `partial=True` with `apply_to()` for updates
    - Pydantic validation
 
 3. **Aggregates**
-   - `PostAggregate`: Post + User (author)
+   - `PostAggregate`: Post + User (author) - field-based composition
    - `CommentAggregate`: Comment + User (author) + Post
-   - Type-safe multi-domain composition
+   - Type-safe multi-domain composition (no generics needed)
 
-4. **System Fields**
-   - `System[int]` for auto-generated IDs
-   - `System[datetime]` for timestamps
-   - Excluded from BuildDTO, required in ViewDTO
+4. **Auto Fields**
+   - `Auto[int]` for auto-generated IDs
+   - `Auto[datetime]` for timestamps
+   - Excluded from BuildDTO, included in ViewDTO
 
 ### Architecture Features
 
-- **DDD Layered Architecture**: Domain → Infrastructure → Application → Presentation
+- **DDD Layered Architecture**: Domain -> Infrastructure -> Application -> Presentation
 - **Repository Pattern**: Abstract interfaces with SQLAlchemy implementations
 - **Dependency Injection**: Clean service dependencies via FastAPI
 - **SQLAlchemy 2.0**: Modern ORM with type hints
 - **SQLite Database**: Simple, file-based database
 
-## 📁 Project Structure
+## Project Structure
 
 ```
 example/
@@ -48,7 +49,7 @@ example/
 │   ├── database/
 │   │   ├── models.py         # SQLAlchemy models
 │   │   └── repositories/     # Repository implementations
-│   └── mappers.py            # Domain ↔ DB mapping
+│   └── mappers.py            # Domain <-> DB mapping
 │
 ├── application/              # Application Layer (Use Cases)
 │   ├── dtos/                 # ViewDTOs and BuildDTOs
@@ -66,11 +67,11 @@ example/
 └── config.py                 # Configuration
 ```
 
-## 🚀 Quick Start
+## Quick Start
 
 ### Prerequisites
 
-- Python 3.10+
+- Python 3.14+
 - [uv](https://github.com/astral-sh/uv) (recommended) or pip
 
 ### Installation
@@ -105,7 +106,7 @@ The API will be available at:
 - **Swagger UI**: http://localhost:8000/docs
 - **ReDoc**: http://localhost:8000/redoc
 
-## 📚 API Examples
+## API Examples
 
 ### Create a User
 
@@ -123,13 +124,13 @@ curl -X POST http://localhost:8000/api/v1/users \
 ```json
 {
   "id": 1,
-  "login": "alice",              // Mapped from username
+  "login": "alice",
   "email": "alice@example.com",
   "full_name": "Alice Wonder",
   "created_at": "2024-11-22T22:00:00",
   "is_active": true,
-  "display_name": "@alice",       // Computed field
-  "account_age_days": 0           // Computed field
+  "display_name": "@alice",
+  "account_age_days": 0
 }
 ```
 
@@ -155,9 +156,9 @@ curl -X POST http://localhost:8000/api/v1/posts \
   "updated_at": "2024-11-22T22:01:00",
   "published": false,
   "author_id": 1,
-  "author_name": "alice",          // From User domain
-  "author_full_name": "Alice Wonder", // From User domain
-  "excerpt": "This is an example blog post..."  // Computed field
+  "author_name": "alice",
+  "author_full_name": "Alice Wonder",
+  "excerpt": "This is an example blog post..."
 }
 ```
 
@@ -180,10 +181,10 @@ curl -X POST http://localhost:8000/api/v1/posts/1/comments \
   "content": "Great post!",
   "created_at": "2024-11-22T22:02:00",
   "author_id": 1,
-  "author_name": "alice",         // From User domain
+  "author_name": "alice",
   "post_id": 1,
-  "post_title": "My First Post",  // From Post domain
-  "author_display": "@alice"      // Computed field
+  "post_title": "My First Post",
+  "author_display": "@alice"
 }
 ```
 
@@ -200,19 +201,19 @@ curl http://localhost:8000/api/v1/posts?published_only=true
 curl http://localhost:8000/api/v1/posts?skip=0&limit=10
 ```
 
-## 🔍 Code Walkthrough
+## Code Walkthrough
 
-### 1. Domain Models with System Fields
+### 1. Domain Models with Auto Fields
 
 ```python
 # domain/models.py
-from potato import Domain, System
+from potato import Domain, Auto
 
 class User(Domain):
-    id: System[int]              # Auto-generated, excluded from BuildDTO
+    id: Auto[int]              # Auto-generated, excluded from BuildDTO
     username: str
     email: str
-    created_at: System[datetime] # System-managed timestamp
+    created_at: Auto[datetime] # Auto-managed timestamp
     is_active: bool = True
 ```
 
@@ -227,13 +228,13 @@ class UserView(ViewDTO[User]):
     login: str = Field(source=User.username)  # Field mapping!
     email: str
     created_at: datetime
-    
+
     @computed
     def display_name(self, user: User) -> str:
         return f"@{user.username}"           # Computed field!
 ```
 
-### 3. BuildDTO with System Field Exclusion
+### 3. BuildDTO with Auto Field Exclusion
 
 ```python
 # application/dtos/user_dtos.py
@@ -244,25 +245,28 @@ class UserCreate(BuildDTO[User]):
     email: str
     full_name: str
     # id and created_at are automatically excluded!
+
+class UserUpdate(BuildDTO[User], partial=True):
+    username: str
+    email: str
+    # All fields become Optional with partial=True
 ```
 
-### 4. Aggregates for Multi-Domain Views
+### 4. Field-Based Aggregates
 
 ```python
 # domain/aggregates.py
 from potato import Aggregate
 
-class PostAggregate(Aggregate[Post, User]):
+class PostAggregate(Aggregate):
     post: Post
     author: User
 
 # application/dtos/post_dtos.py
-from typing import Annotated
-
 class PostView(ViewDTO[PostAggregate]):
-    id: Annotated[int, PostAggregate.post.id]
-    title: Annotated[str, PostAggregate.post.title]
-    author_name: Annotated[str, PostAggregate.author.username]  # From User!
+    id: int = Field(source=PostAggregate.post.id)
+    title: str = Field(source=PostAggregate.post.title)
+    author_name: str = Field(source=PostAggregate.author.username)  # From User!
 ```
 
 ### 5. Repository Pattern
@@ -274,7 +278,7 @@ from abc import ABC, abstractmethod
 class UserRepository(ABC):
     @abstractmethod
     def create(self, user: User) -> User: pass
-    
+
     @abstractmethod
     def get_by_id(self, user_id: int) -> Optional[User]: pass
 
@@ -282,7 +286,7 @@ class UserRepository(ABC):
 class SQLAlchemyUserRepository(UserRepository):
     def __init__(self, session: Session):
         self.session = session
-    
+
     def create(self, user: User) -> User:
         db_user = domain_user_to_db(user)
         self.session.add(db_user)
@@ -297,16 +301,16 @@ class SQLAlchemyUserRepository(UserRepository):
 class UserService:
     def __init__(self, user_repository: UserRepository):
         self.user_repository = user_repository
-    
+
     def create_user(self, user_create: UserCreate) -> UserView:
-        # Convert BuildDTO → Domain
+        # Convert BuildDTO -> Domain
         user = user_create.to_domain(id=0, created_at=datetime.utcnow())
-        
+
         # Business logic & persistence
         created_user = self.user_repository.create(user)
-        
-        # Convert Domain → ViewDTO
-        return UserView.build(created_user)
+
+        # Convert Domain -> ViewDTO
+        return UserView.from_domain(created_user)
 ```
 
 ### 7. FastAPI Router
@@ -321,15 +325,15 @@ def create_user(
     return service.create_user(user_create)
 ```
 
-## 🎓 Key Takeaways
+## Key Takeaways
 
 ### Potato Package Benefits
 
-1. **Type Safety**: Mypy plugin catches missing fields at compile time
+1. **Type Safety**: Metaclass validation catches errors at class-definition time
 2. **Clean Separation**: DTOs separate API from domain models
 3. **Explicit Transformations**: Clear data flow in/out of domain
-4. **System Fields**: Proper handling of auto-generated data
-5. **Aggregates**: Type-safe multi-domain composition
+4. **Auto Fields**: Proper handling of auto-generated data
+5. **Aggregates**: Type-safe multi-domain composition with field-based access
 
 ### DDD Architecture Benefits
 
@@ -338,7 +342,7 @@ def create_user(
 3. **Flexibility**: Swap infrastructure without touching domain
 4. **Clarity**: Each layer has a single responsibility
 
-## 🔧 Development
+## Development
 
 ### Run Tests (TODO)
 
@@ -361,13 +365,13 @@ rm example_blog.db
 # Restart the application to recreate
 ```
 
-## 📖 Learn More
+## Learn More
 
 - [Potato Documentation](../docs/index.md)
 - [ViewDTO Guide](../docs/core/viewdto.md)
 - [BuildDTO Guide](../docs/core/builddto.md)
 - [Aggregates Guide](../docs/core/aggregates.md)
 
-## 📝 License
+## License
 
 This example is part of the Potato package and follows the same MIT license.

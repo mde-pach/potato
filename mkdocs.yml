@@ -31,7 +31,8 @@ markdown_extensions:
   - pymdownx.highlight:
       anchor_linenums: true
   - pymdownx.inlinehilite
-  - pymdownx.snippets
+  - pymdownx.snippets:
+      base_path: ['.']
   - pymdownx.superfences:
       custom_fences:
         - name: mermaid
@@ -64,26 +65,37 @@ plugins:
 
 nav:
   - Home: index.md
-  - Philosophy:
-    - Introduction: philosophy/index.md
-    - Domain-Driven Design: philosophy/domain-driven-design.md
-    - Data Transfer Objects: philosophy/data-transfer-objects.md
-    - Unidirectional Data Flow: philosophy/unidirectional-data-flow.md
-    - Type Safety: philosophy/type-safety.md
-    - Immutability: philosophy/immutability.md
-    - System Fields: philosophy/system-fields.md
-    - Separation of Concerns: philosophy/separation-of-concerns.md
-  - Quickstart: quickstart.md
-  - Core:
-    - Domain Models: core/domain.md
-    - ViewDTO: core/viewdto.md
-    - BuildDTO: core/builddto.md
-    - Aggregates: core/aggregates.md
-    - Aliasing: core/aliasing.md
-  - Guides:
-    - Patterns: guides/patterns.md
-    - Examples: guides/examples.md
-  - Configuration: configuration.md
-  - Mypy: mypy.md
-  - API Reference: api-reference.md
-
+  - Getting Started:
+    - Installation: getting-started/installation.md
+    - Quickstart: getting-started/quickstart.md
+    - Key Concepts: getting-started/concepts.md
+    - Potato vs Pydantic: getting-started/comparison.md
+  - Fundamentals:
+    - Domain Models: fundamentals/domain.md
+    - ViewDTO: fundamentals/viewdto.md
+    - BuildDTO: fundamentals/builddto.md
+    - Aggregates: fundamentals/aggregates.md
+    - Field Mapping: fundamentals/field-mapping.md
+    - Computed Fields: fundamentals/computed-fields.md
+  - Advanced:
+    - Inheritance: advanced/inheritance.md
+    - Nested ViewDTOs: advanced/nested-viewdtos.md
+    - Transforms: advanced/transforms.md
+    - Visibility: advanced/visibility.md
+    - Lifecycle Hooks: advanced/lifecycle-hooks.md
+    - Partial Updates: advanced/partial-updates.md
+    - Non-Domain Fields: advanced/non-domain-fields.md
+    - Error Messages: advanced/error-messages.md
+  - Tutorial:
+    - Overview: tutorial/index.md
+    - Domain & Database: tutorial/step-01-domain-and-database.md
+    - The Product API: tutorial/step-02-product-api.md
+    - The Farmer API: tutorial/step-03-farmer-api.md
+    - The Order API: tutorial/step-04-order-api.md
+    - Access Control & Errors: tutorial/step-05-access-control-and-errors.md
+    - The Complete Spud Market: tutorial/step-06-complete.md
+  - Reference:
+    - API Reference: reference/api.md
+    - Configuration: reference/configuration.md
+    - Philosophy: reference/philosophy.md
+    - Migration: reference/migration.md

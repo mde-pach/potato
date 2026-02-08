@@ -65,7 +65,7 @@ class PostService:
         
         # Build aggregate and return view
         aggregate = PostAggregate(post=created_post, author=author)
-        return PostView.build(aggregate)
+        return PostView.from_domain(aggregate)
     
     def get_post(self, post_id: int) -> Optional[PostView]:
         """
@@ -88,7 +88,7 @@ class PostService:
         
         # Build aggregate and return view
         aggregate = PostAggregate(post=post, author=author)
-        return PostView.build(aggregate)
+        return PostView.from_domain(aggregate)
     
     def list_posts(
         self,
@@ -115,7 +115,7 @@ class PostService:
             author = self.user_repository.get_by_id(post.author_id)
             if author:  # Only include if author exists
                 aggregate = PostAggregate(post=post, author=author)
-                views.append(PostListView.build(aggregate))
+                views.append(PostListView.from_domain(aggregate))
         
         return views
     
@@ -154,7 +154,7 @@ class PostService:
             raise ValueError(f"Author with id {updated_post.author_id} not found")
         
         aggregate = PostAggregate(post=updated_post, author=author)
-        return PostView.build(aggregate)
+        return PostView.from_domain(aggregate)
     
     def publish_post(self, post_id: int) -> PostView:
         """
@@ -186,7 +186,7 @@ class PostService:
             raise ValueError(f"Author not found")
         
         aggregate = PostAggregate(post=updated_post, author=author)
-        return PostView.build(aggregate)
+        return PostView.from_domain(aggregate)
     
     def delete_post(self, post_id: int) -> bool:
         """

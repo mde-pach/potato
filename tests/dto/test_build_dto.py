@@ -11,6 +11,7 @@ from potato.dto import BuildDTO
 
 from ..fixtures.domains import Product, User
 
+
 # =============================================================================
 # BuildDTO Test Classes
 # =============================================================================
@@ -100,12 +101,8 @@ class TestBuildDTOValidation:
         with pytest.raises(ValidationError):
             UserBuildDTO(username=123, email="test@example.com")
 
-        # Might coerce or raise error depending on pydantic settings
-        # Just ensure validation happens
-
     def test_extra_fields_allowed(self) -> None:
         """Test that extra fields are allowed (or ignored)."""
-        # This depends on model config, but by default Pydantic ignores extras
         dto = UserBuildDTO(
             username="test", email="test@example.com", extra_field="ignored"
         )
@@ -142,6 +139,15 @@ class TestBuildDTOToDomain:
         assert user.username == "alice"
         assert user.email == "alice@example.com"
 
+    def test_to_domain_method(self) -> None:
+        """Test to_domain conversion."""
+        dto = UserBuildDTO(username="alice", email="alice@example.com")
+        user = dto.to_domain(id=1)
+
+        assert user.id == 1
+        assert user.username == "alice"
+        assert user.email == "alice@example.com"
+
     def test_model_dump_with_optional_fields(self, user_class: Type[User]) -> None:
         """Test model_dump includes optional fields."""
         dto = UserBuildWithOptionalDTO(
@@ -163,11 +169,9 @@ class TestBuildDTOToDomain:
         """Test that partial BuildDTO requires additional fields for domain."""
         dto = MinimalUserBuildDTO(username="test")
 
-        # This should fail because email is required in User
         with pytest.raises(ValidationError):
             user_class(**dto.model_dump())
 
-        # But works with additional fields
         user = user_class(**dto.model_dump(), id=1, email="test@example.com")
         assert user.username == "test"
 
@@ -248,31 +252,29 @@ class TestBuildDTOWithComplexData:
         assert len(dto.username) == 1000
 
 
-class TestBuildDTOSystemExclusion:
-    """Test BuildDTO system field exclusion."""
+class TestBuildDTOAutoExclusion:
+    """Test BuildDTO Auto field exclusion."""
 
-    def test_build_dto_system_exclusion(self) -> None:
-        """Test that System[T] fields are excluded from BuildDTO but required for to_domain."""
-        from potato import BuildDTO, System, Domain
+    def test_build_dto_auto_exclusion(self) -> None:
+        """Test that Auto[T] fields are excluded from BuildDTO but required for to_domain."""
+        from potato import Auto, BuildDTO, Domain
 
-        class User(Domain):
-            id: System[int]
+        class UserWithAuto(Domain):
+            id: Auto[int]
             username: str
 
-        # Rebuild the model to resolve forward references
-        User.model_rebuild()
+        UserWithAuto.model_rebuild()
 
-        class UserCreate(BuildDTO[User]):
+        class UserCreate(BuildDTO[UserWithAuto]):
             username: str
 
-        # DTO should not have 'id'
         dto = UserCreate(username="testuser")
         assert not hasattr(dto, "id")
 
-        # to_domain should require 'id'
         user = dto.to_domain(id=1)
         assert user.id == 1
         assert user.username == "testuser"
+
 
 class TestBuildDTOEquality:
     """Test BuildDTO equality."""

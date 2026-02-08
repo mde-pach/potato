@@ -6,7 +6,7 @@ from typing import Type
 
 import pytest
 
-from .domains import Buyer, Order, Price, Product, Seller, User
+from .domains import Order, Price, Product, User
 
 
 @pytest.fixture
@@ -31,16 +31,3 @@ def price_class() -> Type[Price]:
 def order_class() -> Type[Order]:
     """Return the Order domain class."""
     return Order
-
-
-@pytest.fixture
-def buyer_alias() -> Type[Buyer]:
-    """Return the Buyer alias."""
-    return Buyer
-
-
-@pytest.fixture
-def seller_alias() -> Type[Seller]:
-    """Return the Seller alias."""
-    return Seller
-

@@ -1,83 +1,85 @@
-"""Tests for domain aliasing functionality."""
+"""Tests for ViewDTO with Aggregate domains (replaces old aliasing tests).
+
+In the new API, there are no aliases. Aggregate field names serve as namespaces.
+ViewDTOs for aggregates use Field(source=Aggregate.field.subfield) to map nested fields.
+"""
 
 from __future__ import annotations
-
-from typing import Annotated
 
 import pytest
 from pydantic import ValidationError
 
+from potato import Field
 from potato.domain import Aggregate
 from potato.dto import ViewDTO
 
-from ..fixtures.domains import Buyer, Product, Seller, User
+from ..fixtures.domains import Product, User
+
 
 # =============================================================================
-# Aliased ViewDTO Test Classes
+# Aggregate + ViewDTO Test Classes
 # =============================================================================
 
 
-class Order(Aggregate[Buyer, Seller, Product]):
-    pass
-
-class Test(ViewDTO[Order]):
-    test_id: Annotated[int, Buyer.id]
-    test_name: Annotated[str, Product.name]
-    test_description: Annotated[str, Product.description]
-    test: Annotated[int, Seller.email]
+class OrderAggregate(Aggregate):
+    """Aggregate with buyer, seller, and product."""
+    buyer: User
+    seller: User
+    product: Product
 
 
-class OrderView(ViewDTO[Order]):
-    """ViewDTO with aliased domains for buyer and seller."""
+class OrderView(ViewDTO[OrderAggregate]):
+    """ViewDTO with mapped fields from aggregate."""
 
-    buyer_id: Annotated[int, Buyer.id]
-    buyer_username: Annotated[str, Buyer.username]
-    buyer_email: Annotated[str, Buyer.email]
+    buyer_id: int = Field(source=OrderAggregate.buyer.id)
+    buyer_username: str = Field(source=OrderAggregate.buyer.username)
+    buyer_email: str = Field(source=OrderAggregate.buyer.email)
 
-    seller_id: Annotated[int, Seller.id]
-    seller_username: Annotated[str, Seller.username]
+    seller_id: int = Field(source=OrderAggregate.seller.id)
+    seller_username: str = Field(source=OrderAggregate.seller.username)
 
-    product_id: Annotated[int, Product.id]
-    product_name: Annotated[str, Product.name]
-    product_description: Annotated[str, Product.description]
-
-
-class Relation(Aggregate[Buyer, Seller]):
-    pass
+    product_id: int = Field(source=OrderAggregate.product.id)
+    product_name: str = Field(source=OrderAggregate.product.name)
+    product_description: str = Field(source=OrderAggregate.product.description)
 
 
-class SimpleAliasedView(ViewDTO[Relation]):
+class RelationAggregate(Aggregate):
+    """Simple aggregate with buyer and seller."""
+    buyer: User
+    seller: User
+
+
+class SimpleAliasedView(ViewDTO[RelationAggregate]):
     """Simple ViewDTO with just buyer and seller."""
 
-    buyer_id: Annotated[int, Buyer.id]
-    buyer_name: Annotated[str, Buyer.username]
-    seller_id: Annotated[int, Seller.id]
-    seller_name: Annotated[str, Seller.username]
+    buyer_id: int = Field(source=RelationAggregate.buyer.id)
+    buyer_name: str = Field(source=RelationAggregate.buyer.username)
+    seller_id: int = Field(source=RelationAggregate.seller.id)
+    seller_name: str = Field(source=RelationAggregate.seller.username)
 
 
-class PartialAliasedView(ViewDTO[Order]):
-    """ViewDTO that only includes some fields from aliased domains."""
+class PartialAliasedView(ViewDTO[OrderAggregate]):
+    """ViewDTO that only includes some fields from aggregate."""
 
-    buyer_id: Annotated[int, Buyer.id]
-    seller_id: Annotated[int, Seller.id]
-    product_name: Annotated[str, Product.name]
+    buyer_id: int = Field(source=OrderAggregate.buyer.id)
+    seller_id: int = Field(source=OrderAggregate.seller.id)
+    product_name: str = Field(source=OrderAggregate.product.name)
 
 
 # =============================================================================
-# Test Aliased ViewDTO Creation
+# Test Aggregate ViewDTO Creation
 # =============================================================================
 
 
-class TestAliasedViewDTOCreation:
-    """Test creating ViewDTOs with aliased domains."""
+class TestAggregateViewDTOCreation:
+    """Test creating ViewDTOs from aggregates."""
 
-    def test_build_with_named_arguments(
+    def test_build_order_view(
         self, buyer_user: User, seller_user: User, laptop_product: Product
     ) -> None:
-        """Test building ViewDTO with named arguments for aliases."""
-        view = OrderView.build(
-            buyer=buyer_user, seller=seller_user, product=laptop_product
-        )
+        """Test building ViewDTO from aggregate."""
+        aggregate = OrderAggregate(buyer=buyer_user, seller=seller_user, product=laptop_product)
+        view = OrderView.from_domain(aggregate)
 
         assert view.buyer_id == 10
         assert view.buyer_username == "buyer1"
@@ -87,45 +89,42 @@ class TestAliasedViewDTOCreation:
         assert view.product_id == 100
         assert view.product_name == "Laptop"
 
-    def test_build_simple_aliased_view(
+    def test_build_simple_view(
         self, buyer_user: User, seller_user: User
     ) -> None:
-        """Test building simple ViewDTO with just two aliases."""
-        view = SimpleAliasedView.build(buyer=buyer_user, seller=seller_user)
+        """Test building simple ViewDTO with just two domains."""
+        aggregate = RelationAggregate(buyer=buyer_user, seller=seller_user)
+        view = SimpleAliasedView.from_domain(aggregate)
 
         assert view.buyer_id == 10
         assert view.buyer_name == "buyer1"
         assert view.seller_id == 20
         assert view.seller_name == "seller1"
 
-    def test_build_partial_aliased_view(
+    def test_build_partial_view(
         self, buyer_user: User, seller_user: User, smartphone_product: Product
     ) -> None:
         """Test building ViewDTO with partial field selection."""
-        view = PartialAliasedView.build(
-            buyer=buyer_user, seller=seller_user, product=smartphone_product
-        )
+        aggregate = OrderAggregate(buyer=buyer_user, seller=seller_user, product=smartphone_product)
+        view = PartialAliasedView.from_domain(aggregate)
 
         assert view.buyer_id == 10
         assert view.seller_id == 20
         assert view.product_name == "Smartphone"
-        # Other fields not included in view
         assert not hasattr(view, "buyer_username")
         assert not hasattr(view, "seller_username")
 
 
-class TestAliasedViewDTOFieldMapping:
-    """Test field mapping with aliased domains."""
+class TestAggregateViewDTOFieldMapping:
+    """Test field mapping with aggregate domains."""
 
     def test_buyer_fields_mapped_correctly(
         self, buyer_user: User, seller_user: User, simple_product: Product
     ) -> None:
         """Test that buyer fields are mapped correctly."""
-        view = OrderView.build(
-            buyer=buyer_user, seller=seller_user, product=simple_product
-        )
+        aggregate = OrderAggregate(buyer=buyer_user, seller=seller_user, product=simple_product)
+        view = OrderView.from_domain(aggregate)
 
-        # All buyer fields should map to buyer instance
         assert view.buyer_id == buyer_user.id
         assert view.buyer_username == buyer_user.username
         assert view.buyer_email == buyer_user.email
@@ -134,39 +133,34 @@ class TestAliasedViewDTOFieldMapping:
         self, buyer_user: User, seller_user: User, simple_product: Product
     ) -> None:
         """Test that seller fields are mapped correctly."""
-        view = OrderView.build(
-            buyer=buyer_user, seller=seller_user, product=simple_product
-        )
+        aggregate = OrderAggregate(buyer=buyer_user, seller=seller_user, product=simple_product)
+        view = OrderView.from_domain(aggregate)
 
-        # All seller fields should map to seller instance
         assert view.seller_id == seller_user.id
         assert view.seller_username == seller_user.username
 
-    def test_different_users_mapped_to_different_aliases(
+    def test_different_users_mapped_to_different_fields(
         self, simple_user: User, complete_user: User, simple_product: Product
     ) -> None:
         """Test that different user instances are correctly distinguished."""
-        view = OrderView.build(
-            buyer=simple_user, seller=complete_user, product=simple_product
-        )
+        aggregate = OrderAggregate(buyer=simple_user, seller=complete_user, product=simple_product)
+        view = OrderView.from_domain(aggregate)
 
-        # Verify they're different users
         assert view.buyer_id != view.seller_id
         assert view.buyer_username != view.seller_username
         assert view.buyer_username == "alice"
         assert view.seller_username == "diana"
 
 
-class TestAliasedViewDTOSerialization:
-    """Test serialization of aliased ViewDTOs."""
+class TestAggregateViewDTOSerialization:
+    """Test serialization of aggregate ViewDTOs."""
 
     def test_model_dump(
         self, buyer_user: User, seller_user: User, laptop_product: Product
     ) -> None:
-        """Test model_dump with aliased ViewDTO."""
-        view = OrderView.build(
-            buyer=buyer_user, seller=seller_user, product=laptop_product
-        )
+        """Test model_dump with aggregate ViewDTO."""
+        aggregate = OrderAggregate(buyer=buyer_user, seller=seller_user, product=laptop_product)
+        view = OrderView.from_domain(aggregate)
         data = view.model_dump()
 
         assert data["buyer_id"] == 10
@@ -179,9 +173,8 @@ class TestAliasedViewDTOSerialization:
         self, buyer_user: User, seller_user: User, simple_product: Product
     ) -> None:
         """Test JSON serialization."""
-        view = OrderView.build(
-            buyer=buyer_user, seller=seller_user, product=simple_product
-        )
+        aggregate = OrderAggregate(buyer=buyer_user, seller=seller_user, product=simple_product)
+        view = OrderView.from_domain(aggregate)
         json_str = view.model_dump_json()
 
         assert isinstance(json_str, str)
@@ -190,16 +183,15 @@ class TestAliasedViewDTOSerialization:
         assert "Widget" in json_str
 
 
-class TestAliasedViewDTOImmutability:
-    """Test immutability of aliased ViewDTOs."""
+class TestAggregateViewDTOImmutability:
+    """Test immutability of aggregate ViewDTOs."""
 
     def test_view_is_frozen(
         self, buyer_user: User, seller_user: User, simple_product: Product
     ) -> None:
-        """Test that aliased ViewDTO is frozen."""
-        view = OrderView.build(
-            buyer=buyer_user, seller=seller_user, product=simple_product
-        )
+        """Test that aggregate ViewDTO is frozen."""
+        aggregate = OrderAggregate(buyer=buyer_user, seller=seller_user, product=simple_product)
+        view = OrderView.from_domain(aggregate)
 
         with pytest.raises((AttributeError, ValidationError)):
             view.buyer_id = 999
@@ -208,48 +200,23 @@ class TestAliasedViewDTOImmutability:
         self, buyer_user: User, seller_user: User, simple_product: Product
     ) -> None:
         """Test that no field can be modified."""
-        view = OrderView.build(
-            buyer=buyer_user, seller=seller_user, product=simple_product
-        )
+        aggregate = OrderAggregate(buyer=buyer_user, seller=seller_user, product=simple_product)
+        view = OrderView.from_domain(aggregate)
 
         with pytest.raises((AttributeError, ValidationError)):
             view.seller_username = "hacker"
 
 
-class TestAliasedViewDTOErrorHandling:
-    """Test error handling with aliased ViewDTOs."""
-
-    def test_missing_required_alias_raises_error(
-        self, buyer_user: User, simple_product: Product
-    ) -> None:
-        """Test that missing required aliased argument raises error."""
-        # Missing seller argument
-        with pytest.raises((ValueError, TypeError, KeyError)):
-            OrderView.build(buyer=buyer_user, product=simple_product)
-
-    def test_wrong_argument_name_raises_error(
-        self, buyer_user: User, seller_user: User, simple_product: Product
-    ) -> None:
-        """Test that wrong argument names are handled."""
-        # Using 'customer' instead of 'buyer'
-        with pytest.raises((ValueError, TypeError)):
-            OrderView.build(
-                customer=buyer_user, seller=seller_user, product=simple_product
-            )
-
-
-class TestAliasedViewDTOComplexScenarios:
-    """Test complex scenarios with aliased ViewDTOs."""
+class TestAggregateViewDTOComplexScenarios:
+    """Test complex scenarios with aggregate ViewDTOs."""
 
     def test_same_user_as_buyer_and_seller(
         self, simple_user: User, simple_product: Product
     ) -> None:
         """Test using same user instance for both buyer and seller."""
-        view = OrderView.build(
-            buyer=simple_user, seller=simple_user, product=simple_product
-        )
+        aggregate = OrderAggregate(buyer=simple_user, seller=simple_user, product=simple_product)
+        view = OrderView.from_domain(aggregate)
 
-        # Should work, but fields should be same
         assert view.buyer_id == view.seller_id
         assert view.buyer_username == view.seller_username
         assert view.buyer_id == 1
@@ -258,51 +225,21 @@ class TestAliasedViewDTOComplexScenarios:
         self, buyer_user: User, seller_user: User, simple_product: Product
     ) -> None:
         """Test creating multiple views from same data."""
-        view1 = OrderView.build(
-            buyer=buyer_user, seller=seller_user, product=simple_product
-        )
-        view2 = OrderView.build(
-            buyer=buyer_user, seller=seller_user, product=simple_product
-        )
+        aggregate = OrderAggregate(buyer=buyer_user, seller=seller_user, product=simple_product)
+        view1 = OrderView.from_domain(aggregate)
+        view2 = OrderView.from_domain(aggregate)
 
         assert view1 == view2
 
     def test_swapped_buyer_and_seller(
         self, buyer_user: User, seller_user: User, simple_product: Product
     ) -> None:
-        """Test swapping buyer and seller arguments."""
-        view1 = OrderView.build(
-            buyer=buyer_user, seller=seller_user, product=simple_product
-        )
-        view2 = OrderView.build(
-            buyer=seller_user,  # Swapped
-            seller=buyer_user,  # Swapped
-            product=simple_product,
-        )
+        """Test swapping buyer and seller."""
+        agg1 = OrderAggregate(buyer=buyer_user, seller=seller_user, product=simple_product)
+        agg2 = OrderAggregate(buyer=seller_user, seller=buyer_user, product=simple_product)
 
-        # Views should have swapped IDs
+        view1 = OrderView.from_domain(agg1)
+        view2 = OrderView.from_domain(agg2)
+
         assert view1.buyer_id == view2.seller_id
         assert view1.seller_id == view2.buyer_id
-
-
-class TestAliasDefinitions:
-    """Test alias definition and usage."""
-
-    def test_buyer_alias_is_distinct_type(
-        self, buyer_alias: type[Buyer], user_class: type[User]
-    ) -> None:
-        """Test that Buyer alias is treated as distinct type."""
-        # Buyer and User are related but distinct for typing purposes
-        assert buyer_alias is not user_class
-
-    def test_seller_alias_is_distinct_type(
-        self, seller_alias: type[Seller], user_class: type[User]
-    ) -> None:
-        """Test that Seller alias is treated as distinct type."""
-        assert seller_alias is not user_class
-
-    def test_buyer_and_seller_are_different(
-        self, buyer_alias: type[Buyer], seller_alias: type[Seller]
-    ) -> None:
-        """Test that Buyer and Seller aliases are different."""
-        assert buyer_alias is not seller_alias

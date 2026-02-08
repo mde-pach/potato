@@ -1,179 +1,125 @@
-"""Tests for the Mypy plugin."""
+"""Tests for runtime validation (metaclass validation tests)."""
 
-def test_view_dto_field_mapping_annotated(assert_mypy_output):
-    code = """
-from typing import Annotated
-from potato import Domain, ViewDTO
+import pytest
 
-class User(Domain):
-    username: str
-
-class UserView(ViewDTO[User]):
-    # Map username to login
-    login: Annotated[str, User.username]
-"""
-    assert_mypy_output(code, expected_clean=True)
-
-def test_view_dto_field_mapping_field_class(assert_mypy_output):
-    code = """
-from potato import Domain, ViewDTO, Field
-
-class User(Domain):
-    username: str
-
-class UserView(ViewDTO[User]):
-    # Map username to login using Field
-    login: str = Field(source=User.username)
-"""
-    assert_mypy_output(code, expected_clean=True)
-
-def test_view_dto_with_context(assert_mypy_output):
-    code = """
-from potato import Domain, ViewDTO
-
-class UserContext:
-    is_admin: bool
-
-class User(Domain):
-    name: str
-
-class UserView(ViewDTO[User, UserContext]):
-    name: str
-"""
-    assert_mypy_output(code, expected_clean=True)
-
-def test_view_dto_automatic_field_mapping(assert_mypy_output):
-    code = """
-from potato import Domain, ViewDTO
-
-class User(Domain):
-    id: int
-    username: str
-    email: str
-    is_active: bool
-
-class UserView(ViewDTO[User]):
-    # All fields automatically mapped by name - no explicit Field() or Annotated needed
-    id: int
-    username: str
-    email: str
-    is_active: bool
-"""
-    assert_mypy_output(code, expected_clean=True)
-
-def test_view_dto_invalid_field_mapping(assert_mypy_output):
-    code = """
-from potato import Domain, ViewDTO, Field
-
-class User(Domain):
-    name: str
-
-class UserView(ViewDTO[User]):
-    # 'unknown' does not exist on User
-    name: str = Field(source=User.unknown)
-"""
-    # We check for our plugin's error message specifically.
-    assert_mypy_output(code, expected_errors=['ViewDTO "UserView" field "name" maps to non-existent Domain field "unknown" in "User"'])
-
-def test_view_dto_cross_domain_field_mapping(assert_mypy_output):
-    code = """
-from potato import Domain, ViewDTO, Field
-
-class User(Domain):
-    id: int
-    username: str
-
-class Order(Domain):
-    id: int
-    amount: float
-
-# Should error - mapping to Order.id in ViewDTO[User]
-class UserView(ViewDTO[User]):
-    username: str
-    order_id: int = Field(source=Order.id)
-"""
-    # This should detect that Order.id is from the wrong domain
-    assert_mypy_output(code, expected_errors=['ViewDTO "UserView" field "order_id" maps to field from "Order" but ViewDTO is for "User"'])
+from potato import Aggregate, Domain, Field, ViewDTO
 
 
-def test_aggregate_validation_missing_domain(assert_mypy_output):
-    code = """
-from potato import Domain, Aggregate
+# ============================================================================
+# Valid definitions (should not raise)
+# ============================================================================
 
-class User(Domain):
-    name: str
 
-class Order(Domain):
-    amount: int
+def test_view_dto_field_mapping_field_class():
+    class User(Domain):
+        username: str
 
-# Order is used but not declared in Aggregate
-class MyAggregate(Aggregate[User]):
-    user: User
-    order: Order
-"""
-    assert_mypy_output(code, expected_errors=['Field "order" has type "Order" which is not declared in the Aggregate generic'])
+    class UserView(ViewDTO[User]):
+        login: str = Field(source=User.username)
 
-def test_domain_aliasing(assert_mypy_output):
-    code = """
-from potato import Domain, Aggregate
 
-class User(Domain):
-    name: str
+def test_view_dto_with_context():
+    class UserContext:
+        is_admin: bool
 
-# This should be valid and inferred as a type
-Buyer = User.alias("buyer")
+    class User(Domain):
+        name: str
 
-class MyAggregate(Aggregate[User, Buyer]):
-    user: User
-    buyer: Buyer
-"""
-    assert_mypy_output(code, expected_clean=True)
+    class UserView(ViewDTO[User, UserContext]):
+        name: str
 
-def test_view_dto_inherited_domain(assert_mypy_output):
-    code = """
-from typing import Annotated
-from potato import Domain, ViewDTO, Aggregate
 
-class User(Domain):
-    name: str
+def test_view_dto_automatic_field_mapping():
+    class User(Domain):
+        id: int
+        username: str
+        email: str
+        is_active: bool
 
-class Product(Domain):
-    name: str
+    class UserView(ViewDTO[User]):
+        id: int
+        username: str
+        email: str
+        is_active: bool
 
-class Order(Aggregate[User, Product]):
-    amount: int
 
-class OrderView(ViewDTO[Order]):
-    product_name: Annotated[str, Product.name]
-"""
-    assert_mypy_output(code, expected_clean=True)
+def test_aggregate_field_based():
+    """Test new field-based aggregate definition."""
+    class User(Domain):
+        name: str
 
-def test_view_dto_inherited_domain_with_aliasing(assert_mypy_output):
-    code = """
-from typing import Annotated
-from potato import Domain, ViewDTO, Aggregate
+    class Product(Domain):
+        name: str
 
-class User(Domain):
-    id: int
-    email: str
-    name: str
+    class Order(Aggregate):
+        user: User
+        product: Product
+        amount: int
 
-class Product(Domain):
-    id: int
-    name: str
-    seller_id: int
-    buyer_id: int
 
-Buyer = User.alias("buyer")
-Seller = User.alias("seller")
+def test_view_dto_aggregate_with_field_source():
+    """Test ViewDTO with aggregate using Field(source=...)."""
+    class User(Domain):
+        name: str
 
-class Order(Aggregate[Buyer, Seller, Product]):
-    amount: int
+    class Product(Domain):
+        name: str
 
-class OrderView(ViewDTO[Order]):
-    buyer_id: Annotated[int, Buyer.id]
-    buyer_email: Annotated[str, Buyer.email]
-    seller_id: Annotated[int, Seller.id]
-    seller_name: Annotated[str, Seller.name]
-"""
-    assert_mypy_output(code, expected_clean=True)
+    class Order(Aggregate):
+        user: User
+        product: Product
+
+    class OrderView(ViewDTO[Order]):
+        product_name: str = Field(source=Order.product.name)
+
+
+def test_view_dto_aggregate_with_multiple_same_domain():
+    """Test ViewDTO with aggregate having multiple fields of the same domain type."""
+    class User(Domain):
+        id: int
+        email: str
+        name: str
+
+    class Product(Domain):
+        id: int
+        name: str
+
+    class Order(Aggregate):
+        buyer: User
+        seller: User
+        product: Product
+
+    class OrderView(ViewDTO[Order]):
+        buyer_id: int = Field(source=Order.buyer.id)
+        buyer_email: str = Field(source=Order.buyer.email)
+        seller_id: int = Field(source=Order.seller.id)
+        seller_name: str = Field(source=Order.seller.name)
+
+
+# ============================================================================
+# Invalid definitions (should raise)
+# ============================================================================
+
+
+def test_view_dto_invalid_field_mapping():
+    class User(Domain):
+        name: str
+
+    with pytest.raises(AttributeError):
+        class UserView(ViewDTO[User]):
+            name: str = Field(source=User.unknown)
+
+
+def test_view_dto_cross_domain_field_mapping():
+    class User(Domain):
+        id: int
+        username: str
+
+    class Order(Domain):
+        id: int
+        amount: float
+
+    with pytest.raises(TypeError, match="references"):
+        class UserView(ViewDTO[User]):
+            username: str
+            order_id: int = Field(source=Order.id)

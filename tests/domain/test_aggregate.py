@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from typing import Annotated
-
 import pytest
 from pydantic import ValidationError
 
@@ -11,33 +9,34 @@ from potato.domain.aggregates import Aggregate
 
 from ..fixtures.domains import Price, Product, User
 
+
 # =============================================================================
-# Aggregate Test Classes
+# Aggregate Test Classes (new field-based syntax, no generics)
 # =============================================================================
 
 
-class SimpleOrder(Aggregate[User, Product]):
+class SimpleOrder(Aggregate):
     """Simple aggregate with two domains."""
 
     customer: User
     product: Product
 
 
-class OrderWithFieldExtraction(Aggregate[User, Price, Product]):
-    """Aggregate with field extraction."""
+class OrderWithFields(Aggregate):
+    """Aggregate with domain fields and scalar fields."""
 
     customer: User
-    price_amount: Annotated[int, Price.amount]
-    price_currency: Annotated[str, Price.currency]
+    price_amount: int
+    price_currency: str
     product: Product
 
 
-class ComplexOrder(Aggregate[User, Price, Product]):
-    """Complex aggregate with both full domains and extracted fields."""
+class ComplexOrder(Aggregate):
+    """Complex aggregate with multiple users and extra fields."""
 
     customer: User
     seller: User
-    price_amount: Annotated[int, Price.amount]
+    price_amount: int
     product: Product
     order_notes: str = ""
 
@@ -61,11 +60,11 @@ class TestAggregateCreation:
         assert order.product.id == 1
         assert order.product.name == "Widget"
 
-    def test_create_aggregate_with_field_extraction(
+    def test_create_aggregate_with_fields(
         self, simple_user: User, usd_price: Price, simple_product: Product
     ) -> None:
-        """Test creating aggregate with extracted fields."""
-        order = OrderWithFieldExtraction(
+        """Test creating aggregate with scalar fields."""
+        order = OrderWithFields(
             customer=simple_user,
             price_amount=usd_price.amount,
             price_currency=usd_price.currency,
@@ -99,7 +98,7 @@ class TestAggregateCreation:
         assert order.product.name == "Widget"
         assert order.order_notes == "Rush delivery"
 
-    def test_create_order_from_fixture(self, simple_order: ComplexOrder) -> None:
+    def test_create_order_from_fixture(self, simple_order) -> None:
         """Test using order fixture."""
         assert simple_order.customer.username == "alice"
         assert simple_order.seller.username == "seller1"
@@ -110,19 +109,19 @@ class TestAggregateCreation:
 class TestAggregateAccess:
     """Test accessing aggregate fields."""
 
-    def test_access_nested_domain_fields(self, simple_order: ComplexOrder) -> None:
+    def test_access_nested_domain_fields(self, simple_order) -> None:
         """Test accessing fields from nested domains."""
         assert simple_order.customer.id == 1
         assert simple_order.customer.email == "alice@example.com"
         assert simple_order.seller.id == 20
         assert simple_order.product.description == "A useful widget"
 
-    def test_access_extracted_fields(self, simple_order: ComplexOrder) -> None:
-        """Test accessing extracted fields."""
+    def test_access_scalar_fields(self, simple_order) -> None:
+        """Test accessing scalar fields."""
         assert simple_order.price_amount == 100
         assert isinstance(simple_order.price_amount, int)
 
-    def test_modify_nested_domain(self, simple_order: ComplexOrder) -> None:
+    def test_modify_nested_domain(self, simple_order) -> None:
         """Test modifying nested domain fields."""
         original_username = simple_order.customer.username
         simple_order.customer.username = "new_username"
@@ -130,9 +129,7 @@ class TestAggregateAccess:
         assert simple_order.customer.username == "new_username"
         assert simple_order.customer.username != original_username
 
-    def test_replace_nested_domain(
-        self, simple_order: ComplexOrder, complete_user: User
-    ) -> None:
+    def test_replace_nested_domain(self, simple_order, complete_user: User) -> None:
         """Test replacing entire nested domain."""
         simple_order.customer = complete_user
 
@@ -143,9 +140,7 @@ class TestAggregateAccess:
 class TestAggregateSerialization:
     """Test aggregate serialization."""
 
-    def test_model_dump_includes_nested_domains(
-        self, simple_order: ComplexOrder
-    ) -> None:
+    def test_model_dump_includes_nested_domains(self, simple_order) -> None:
         """Test that model_dump includes all nested domains."""
         data = simple_order.model_dump()
 
@@ -159,7 +154,7 @@ class TestAggregateSerialization:
         assert data["product"]["name"] == "Widget"
         assert data["price_amount"] == 100
 
-    def test_model_dump_json(self, simple_order: ComplexOrder) -> None:
+    def test_model_dump_json(self, simple_order) -> None:
         """Test JSON serialization of aggregate."""
         json_str = simple_order.model_dump_json()
 
@@ -168,7 +163,7 @@ class TestAggregateSerialization:
         assert "seller1" in json_str
         assert "Widget" in json_str
 
-    def test_model_dump_exclude(self, simple_order: ComplexOrder) -> None:
+    def test_model_dump_exclude(self, simple_order) -> None:
         """Test model_dump with exclude option."""
         data = simple_order.model_dump(exclude={"seller"})
 
@@ -182,27 +177,27 @@ class TestAggregateValidation:
 
     def test_missing_required_domain_raises_error(self, simple_user: User) -> None:
         """Test that missing required domain raises error."""
-        with pytest.raises(ValidationError):
+        with pytest.raises((ValidationError, TypeError)):
             SimpleOrder(customer=simple_user)  # type: ignore[call-arg]
 
-    def test_missing_extracted_field_raises_error(
+    def test_missing_scalar_field_raises_error(
         self, simple_user: User, simple_product: Product
     ) -> None:
-        """Test that missing extracted field raises error."""
+        """Test that missing scalar field raises error."""
         with pytest.raises(ValidationError):
-            OrderWithFieldExtraction(
+            OrderWithFields(
                 customer=simple_user,
                 price_amount=100,
                 # Missing price_currency
                 product=simple_product,
             )
 
-    def test_wrong_type_for_extracted_field(
+    def test_wrong_type_for_scalar_field(
         self, simple_user: User, simple_product: Product
     ) -> None:
-        """Test that wrong type for extracted field raises error."""
+        """Test that wrong type for scalar field raises error."""
         with pytest.raises(ValidationError):
-            OrderWithFieldExtraction(
+            OrderWithFields(
                 customer=simple_user,
                 price_amount="not_an_int",  # Should be int
                 price_currency="USD",
@@ -214,7 +209,6 @@ class TestAggregateValidation:
     ) -> None:
         """Test that wrong domain type raises error."""
         with pytest.raises(ValidationError):
-            # Passing price where product is expected
             SimpleOrder(customer=simple_user, product=usd_price)
 
 
@@ -237,21 +231,21 @@ class TestAggregateEquality:
 
         assert order1 != order2
 
-    def test_different_extracted_field_not_equal(
+    def test_different_scalar_field_not_equal(
         self,
         simple_user: User,
         simple_product: Product,
         usd_price: Price,
         eur_price: Price,
     ) -> None:
-        """Test that different extracted fields make aggregates unequal."""
-        order1 = OrderWithFieldExtraction(
+        """Test that different scalar fields make aggregates unequal."""
+        order1 = OrderWithFields(
             customer=simple_user,
             price_amount=usd_price.amount,
             price_currency=usd_price.currency,
             product=simple_product,
         )
-        order2 = OrderWithFieldExtraction(
+        order2 = OrderWithFields(
             customer=simple_user,
             price_amount=eur_price.amount,
             price_currency=eur_price.currency,
@@ -295,7 +289,6 @@ class TestAggregateComplexScenarios:
             seller=seller_user,
             price_amount=usd_price.amount,
             product=simple_product,
-            # order_notes is optional
         )
 
         assert order.order_notes == ""
@@ -326,11 +319,11 @@ class TestAggregateComplexScenarios:
 class TestAggregateFieldExtraction:
     """Test field extraction patterns."""
 
-    def test_extract_single_field(
+    def test_scalar_fields(
         self, simple_user: User, usd_price: Price, simple_product: Product
     ) -> None:
-        """Test extracting a single field from a domain."""
-        order = OrderWithFieldExtraction(
+        """Test scalar fields in aggregate."""
+        order = OrderWithFields(
             customer=simple_user,
             price_amount=usd_price.amount,
             price_currency=usd_price.currency,
@@ -340,40 +333,51 @@ class TestAggregateFieldExtraction:
         assert order.price_amount == usd_price.amount
         assert order.price_currency == usd_price.currency
 
-    def test_extract_multiple_fields_same_domain(
+    def test_mix_domains_and_scalars(
         self, simple_user: User, usd_price: Price, simple_product: Product
     ) -> None:
-        """Test extracting multiple fields from same domain."""
-        order = OrderWithFieldExtraction(
+        """Test mixing full domains and scalar fields."""
+        order = OrderWithFields(
             customer=simple_user,
             price_amount=usd_price.amount,
             price_currency=usd_price.currency,
             product=simple_product,
         )
 
-        # Both fields extracted from Price domain
-        assert order.price_amount == 100
-        assert order.price_currency == "USD"
-
-    def test_mix_full_domains_and_extracted_fields(
-        self, simple_user: User, usd_price: Price, simple_product: Product
-    ) -> None:
-        """Test mixing full domains and extracted fields."""
-        order = OrderWithFieldExtraction(
-            customer=simple_user,  # Full domain
-            price_amount=usd_price.amount,  # Extracted field
-            price_currency=usd_price.currency,  # Extracted field
-            product=simple_product,  # Full domain
-        )
-
-        # Can access full customer domain
         assert order.customer.username == "alice"
         assert order.customer.email == "alice@example.com"
-
-        # Can access extracted price fields
         assert order.price_amount == 100
         assert order.price_currency == "USD"
-
-        # Can access full product domain
         assert order.product.name == "Widget"
         assert order.product.description == "A useful widget"
+
+
+class TestAggregateFieldAccess:
+    """Test DomainFieldAccessor for Aggregate field access."""
+
+    def test_aggregate_field_returns_accessor(self) -> None:
+        """Test that accessing a domain field on Aggregate returns DomainFieldAccessor."""
+        from potato.types import DomainFieldAccessor
+        accessor = SimpleOrder.customer
+        assert isinstance(accessor, DomainFieldAccessor)
+
+    def test_aggregate_field_accessor_returns_field_proxy(self) -> None:
+        """Test that DomainFieldAccessor returns FieldProxy on attribute access."""
+        from potato.types import FieldProxy
+        proxy = SimpleOrder.customer.username
+        assert isinstance(proxy, FieldProxy)
+        assert proxy.model_cls is User
+        assert proxy.field_name == "username"
+        assert proxy.namespace == "customer"
+
+    def test_aggregate_field_accessor_invalid_field(self) -> None:
+        """Test that accessing non-existent field raises AttributeError."""
+        with pytest.raises(AttributeError):
+            SimpleOrder.customer.nonexistent
+
+    def test_aggregate_non_domain_field_returns_field_proxy(self) -> None:
+        """Test that non-domain fields still return FieldProxy."""
+        from potato.types import FieldProxy
+        proxy = OrderWithFields.price_amount
+        assert isinstance(proxy, FieldProxy)
+        assert proxy.field_name == "price_amount"

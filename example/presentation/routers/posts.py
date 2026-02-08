@@ -48,7 +48,7 @@ def get_post(
     Get post by ID with author information.
     
     Demonstrates:
-    - ViewDTO from Aggregate[Post, User]
+    - ViewDTO from PostAggregate (field-based)
     - Field extraction from multiple domains
     - Computed fields (excerpt)
     """

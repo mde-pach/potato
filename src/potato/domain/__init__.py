@@ -1,8 +1,7 @@
 from .aggregates import Aggregate
-from .domain import Domain, FieldProxy
+from .domain import Domain
 
 __all__ = [
     "Aggregate",
     "Domain",
-    "FieldProxy",
 ]

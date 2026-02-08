@@ -2,16 +2,16 @@
 
 from datetime import datetime
 from potato import ViewDTO, BuildDTO, Field, computed
-from domain.models import Post, User
+from domain.models import Post
 from domain.aggregates import PostAggregate
 
 
 class PostView(ViewDTO[PostAggregate]):
     """
     ViewDTO for PostAggregate - demonstrates building from multiple domains.
-    
+
     Features demonstrated:
-    - Building from Aggregate[Post, User]
+    - Building from field-based Aggregate
     - Field extraction from multiple domains
     - Mixing direct fields and mapped fields
     """
@@ -22,12 +22,12 @@ class PostView(ViewDTO[PostAggregate]):
     created_at: datetime = Field(source=PostAggregate.post.created_at)
     updated_at: datetime = Field(source=PostAggregate.post.updated_at)
     published: bool = Field(source=PostAggregate.post.published)
-    
+
     # Author fields from User domain
     author_id: int = Field(source=PostAggregate.author.id)
     author_name: str = Field(source=PostAggregate.author.username)
     author_full_name: str = Field(source=PostAggregate.author.full_name)
-    
+
     @computed
     def excerpt(self, aggregate: PostAggregate) -> str:
         """Computed field showing post excerpt (first 100 chars)."""
@@ -47,9 +47,9 @@ class PostListView(ViewDTO[PostAggregate]):
 class PostCreate(BuildDTO[Post]):
     """
     BuildDTO for creating posts.
-    
+
     Features demonstrated:
-    - System fields (id, created_at, updated_at) excluded
+    - Auto fields (id, created_at, updated_at) excluded
     """
     title: str
     content: str
@@ -57,8 +57,8 @@ class PostCreate(BuildDTO[Post]):
     published: bool = False
 
 
-class PostUpdate(BuildDTO[Post]):
-    """BuildDTO for updating posts with optional fields."""
-    title: str | None = None
-    content: str | None = None
-    published: bool | None = None
+class PostUpdate(BuildDTO[Post], partial=True):
+    """BuildDTO for updating posts - all fields optional with partial=True."""
+    title: str
+    content: str
+    published: bool

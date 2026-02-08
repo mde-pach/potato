@@ -77,7 +77,7 @@ class CommentService:
             author=author,
             post=post,
         )
-        return CommentView.build(aggregate)
+        return CommentView.from_domain(aggregate)
     
     def get_comment(self, comment_id: int) -> Optional[CommentView]:
         """
@@ -102,7 +102,7 @@ class CommentService:
         
         # Build aggregate
         aggregate = CommentAggregate(comment=comment, author=author, post=post)
-        return CommentView.build(aggregate)
+        return CommentView.from_domain(aggregate)
     
     def list_comments_by_post(
         self,
@@ -131,7 +131,7 @@ class CommentService:
             
             if author and post:
                 aggregate = CommentAggregate(comment=comment, author=author, post=post)
-                views.append(CommentListView.build(aggregate))
+                views.append(CommentListView.from_domain(aggregate))
         
         return views
     
@@ -167,7 +167,7 @@ class CommentService:
             raise ValueError("Author or post not found")
         
         aggregate = CommentAggregate(comment=updated_comment, author=author, post=post)
-        return CommentView.build(aggregate)
+        return CommentView.from_domain(aggregate)
     
     def delete_comment(self, comment_id: int) -> bool:
         """

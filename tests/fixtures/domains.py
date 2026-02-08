@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from typing import Annotated
-
 from potato.domain import Aggregate, Domain
 
 
@@ -32,15 +30,10 @@ class Product(Domain):
     description: str
 
 
-class Order(Aggregate[User, Price, Product]):
+class Order(Aggregate):
     """An aggregate domain composed of multiple other domains."""
 
     customer: User
     seller: User
-    price_amount: Annotated[int, Price.amount]
+    price_amount: int
     product: Product
-
-
-# Aliased types for multi-instance scenarios
-Buyer = User.alias("buyer")
-Seller = User.alias("seller")

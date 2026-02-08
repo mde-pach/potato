@@ -58,7 +58,7 @@ def get_comment(
     Get comment by ID with full context.
     
     Demonstrates:
-    - ViewDTO from Aggregate[Comment, User, Post]
+    - ViewDTO from CommentAggregate (field-based)
     - Field extraction from 3 domains
     - Computed fields (author_display)
     """
